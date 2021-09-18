@@ -1,0 +1,32 @@
+{
+  "name": "couchset",
+  "version": "0.0.0",
+  "description": "Automatic GraphQL API(Resolver/Queries) for Couchbase",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/couchset/couchset.git"
+  },
+  "keywords": [
+    "Couchbase",
+    "couchset",
+    "database",
+    "nosql",
+    "sql",
+    "data",
+    "migrations",
+    "mongodb",
+    "orm",
+    "mongoose",
+    "redis"
+  ],
+  "author": "Ceddy Muhoza <ceddymuhoza@gmail.com >",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/couchset/couchset/issues"
+  },
+  "homepage": "https://github.com/couchset/couchset#readme"
+}
