@@ -15,7 +15,7 @@
 
 </div>
 
-<img width="400px" src="./docs/couchset.png"></img>
+<img width="500px" src="./docs/couchset.png"></img>
 </div>
 
 
@@ -265,7 +265,10 @@ TODO
 
 
 
+
+<div align="center">
 <img height="300px" src="./docs/couch.png"></img>
+</div>
 
 <p align="center">
   <h1 align="center"> Algo Inc </h1>
