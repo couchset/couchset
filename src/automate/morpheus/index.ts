@@ -1,5 +1,5 @@
 /**
- * Define all models that can should be morphed
+ * Define all models that should be morphed
  */
 import {ExportDeclarationStructure, StructureKind} from 'ts-morph';
 import isEmpty from 'lodash/isEmpty';
@@ -13,10 +13,15 @@ interface ClientModels {
     client: Record<string, DocumentNode>;
 }
 
+interface IWriteClient {
+    path: string;
+    clients: ClientModels[];
+}
+
 /**
  * Morpheus in actions
  */
-export const writeAllClientSchemas = async (clients: ClientModels[]): Promise<void> => {
+export const writeAllClientSchemas = async ({clients, path}: IWriteClient): Promise<void> => {
     if (!isDev) {
         return;
     }
@@ -57,6 +62,7 @@ export const writeAllClientSchemas = async (clients: ClientModels[]): Promise<vo
         return {
             filename: nameSNAKE_CASE,
             task: writeTsFile({
+                pathToClient: path,
                 filename: nameSNAKE_CASE,
                 variables: constStatements.map((con) => ({
                     name: con.name,

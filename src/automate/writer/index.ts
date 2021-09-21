@@ -8,24 +8,25 @@ import {
     ExportDeclarationStructure,
 } from 'ts-morph';
 
-const pathToTs = __dirname + '/../../../../client/';
+const defaultPathToTs = __dirname + '/client/';
 
 interface WriteFileProps extends StatementedNodeStructure {
     filename: string;
     variables?: OptionalKind<VariableDeclarationStructure>[];
     interfaces?: OptionalKind<InterfaceDeclarationStructure>[];
     exports?: OptionalKind<ExportDeclarationStructure>[];
+    pathToClient?: string;
 }
 
 export const writeTsFile = async (props: WriteFileProps): Promise<any> => {
-    const {filename, variables, interfaces, exports} = props;
+    const {filename, variables, interfaces, exports, pathToClient = defaultPathToTs} = props;
     const project = new Project({
-        tsConfigFilePath: `${pathToTs}/tsconfig.json`,
+        tsConfigFilePath: `${pathToClient}/tsconfig.json`,
         skipAddingFilesFromTsConfig: true,
     });
 
     const sourceFile = project.createSourceFile(
-        `${pathToTs}/${filename}.ts`,
+        `${pathToClient}/${filename}.ts`,
         {},
         {overwrite: true}
     );
