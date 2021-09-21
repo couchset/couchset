@@ -110,7 +110,7 @@ export const automateImplementation = <T>(
         hasNext?: boolean;
 
         @Field(() => GraphQLJSON, {nullable: true})
-        params?: any;
+        params?: typeof GraphQLJSON;
     }
     // return Pagination;
 
