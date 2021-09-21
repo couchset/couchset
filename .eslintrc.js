@@ -40,5 +40,13 @@ module.exports = {
         "import/no-duplicates": "error"
 
     },
+    "overrides": [{
+        "files": "src/**/*.ts",
+        "env": { "node": true },
+        "rules": {
+            "simple-import-sort/imports": "off",
+            "import/order": ["error", { "newlines-between": "always" }]
+        }
+    }],
     settings: {},
 };
