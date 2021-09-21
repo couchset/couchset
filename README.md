@@ -68,7 +68,7 @@ const deletedData = await userModel.delete(created.id);
 
 All models come with a method for automatic pagination 
 ```ts
-const paginationData = await model.pagination({
+const paginationData = await userModel.pagination({
     select: ["id", "email", "phone","fullname"],
     where: { 
         userId: { $eq: "ceddy" },
@@ -169,72 +169,6 @@ SELECT COUNT(type) AS odm FROM travel-sample USE KEYS ["airlineR_8093","airlineR
 ```
 
 
-### Another example using functions
-
-```ts
-const select = [
-  {
-    $count: {
-      $field: {
-        name: 'type',
-      },
-      as: 'odm',
-    },
-  },
-  {
-    $max: {
-      $field: 'amount',
-    },
-  },
-];
-const letExpr = [
-  { key: 'amount_val', value: 10 },
-  { key: 'size_val', value: 20 },
-];
-const where = {
-  $or: [{ price: { $gt: 'amount_val', $isNotNull: true } }, { auto: { $gt: 10 } }, { amount: 10 }],
-  $and: [
-    { price2: { $gt: 1.99, $isNotNull: true } },
-    { $or: [{ price3: { $gt: 1.99, $isNotNull: true } }, { id: '20' }] },
-  ],
-};
-const groupBy = [{ expr: 'type', as: 'sch' }];
-const having = {
-  type: { $like: '%hotel%' },
-};
-const lettingExpr = [
-  { key: 'amount_v2', value: 10 },
-  { key: 'size_v2', value: 20 },
-];
-const orderBy = { type: 'DESC' };
-const limit = 10;
-const offset = 1;
-const useExpr = ['airlineR_8093', 'airlineR_8094'];
-
-const query = new Query({}, 'collection-name')
-  .select(select)
-  .let(letExpr)
-  .where(where)
-  .groupBy(groupBy)
-  .letting(lettingExpr)
-  .having(having)
-  .orderBy(orderBy)
-  .limit(limit)
-  .offset(offset)
-  .useKeys(useExpr)
-  .build();
-console.log(query);
-
-```
-
-Which translates to
-```sql
-SELECT COUNT(type) AS odm,MAX(amount) FROM `travel-sample` USE KEYS ['airlineR_8093','airlineR_8094'] LET amount_val = 10,size_val = 20 WHERE ((price > amount_val AND price IS NOT NULL) OR auto > 10 OR amount = 10) AND ((price2 > 1.99 AND price2 IS NOT NULL) AND ((price3 > 1.99 AND price3 IS NOT NULL) OR id = '20')) GROUP BY type AS sch LETTING amount_v2=10,size_v2=20 HAVING type LIKE "%hotel%" ORDER BY type = 'DESC' LIMIT 10 OFFSET 1
-```
-
-
-
-
 
 ### Running custom query on cluster
 
@@ -246,9 +180,31 @@ const queryresults = await QueryCluster(queryBuilder);
 
 ```
 
-## 5. Automation
+## 6. Model Automation
 
+This is how we automate it to generate code with all methods,schema, queries 
+
+```ts
+const automaticUser = userModel.automate();
+```
+
+After automating the model, `automaticUser` will come with Server-side Resolver functions, and client queries, mutations, subscriptions, like below
+
+
+```ts
+// Get all automatic generated resolvers and queries/fragments,mutations,subscriptions
+const {
+  resolver: UserResolver, // Server resolver for building GraphQL 
+  modelKeys: UserSelectors, // for any custom queries or exporting
+  client, // client queries,mutations,subscriptions
+} = automaticUser;
+
+```
+
+## 7. Write to filesystem
 TODO
+
+
 
 
 <br/>
