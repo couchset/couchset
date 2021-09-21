@@ -1,8 +1,7 @@
 import 'reflect-metadata';
 import 'mocha';
 import {expect} from 'chai';
-import {couchset, Model, Query} from './index';
-import { Field, ObjectType } from 'type-graphql';
+import {couchset, Model, QueryBuilder, Field, ObjectType} from './index';
 
 before((done) => {
     couchset({
@@ -93,7 +92,7 @@ describe('CouchSet', () => {
 
     it('should create query', async () => {
         const dbName = 'stq';
-        const query = new Query({}, dbName).select('*').build();
+        const query = new QueryBuilder({}, dbName).select('*').build();
 
         console.log('query is', query);
 

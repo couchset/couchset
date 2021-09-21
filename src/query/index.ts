@@ -18,7 +18,7 @@ export {
     QueryGroupByParamsException,
     IndexParamsOnExceptions,
 } from './exceptions';
-export {Query} from './query';
+export {QueryBuilder} from './query';
 export {
     ILetExpr,
     SortType,

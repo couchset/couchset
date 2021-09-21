@@ -1,4 +1,4 @@
-import {Query} from '../query';
+import {QueryBuilder} from '../query';
 import CouchbaseConnection from '../connection';
 
 export interface PaginationArgs {
@@ -42,7 +42,7 @@ export const Pagination = async (args: PaginationArgs): Promise<any[]> => {
     const offset = page * limit;
 
     try {
-        const query = new Query(where, bucketName)
+        const query = new QueryBuilder(where, bucketName)
             .select(select)
             .limit(limit)
             .offset(offset)

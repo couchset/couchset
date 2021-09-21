@@ -17,7 +17,7 @@ import {
 } from './exceptions';
 import {buildIndexExpr, selectBuilder} from './helpers';
 
-export class Query extends BaseQuery {
+export class QueryBuilder extends BaseQuery {
     /**
      * SELECT Expression.
      */
@@ -88,18 +88,18 @@ export class Query extends BaseQuery {
      */
     private indexWith?: IIndexWithParams;
     /**
-     * @summary Create an instance of Query.
-     * @name Query
+     * @summary Create an instance of QueryBuilder.
+     * @name QueryBuilder
      * @class
      * @public
      *
      * @param conditions List of SELECT clause conditions
      * @param collection Collection name
-     * @returns Query
+     * @returns QueryBuilder
      *
      * @example
      * ```ts
-     *  const query = new Query({$select: [{$field: 'address'}], $where: {$nill: [{ address: { $like: '%57-59%' } }, { free_breakfast: true }, { free_lunch: [1] }]}}, 'travel-sample');
+     *  const query = new QueryBuilder({$select: [{$field: 'address'}], $where: {$nill: [{ address: { $like: '%57-59%' } }, { free_breakfast: true }, { free_lunch: [1] }]}}, 'travel-sample');
      * ```
      */
     constructor(conditions: IConditionExpr, collection: string) {
@@ -116,13 +116,13 @@ export class Query extends BaseQuery {
      *
      * @example
      * ```ts
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample`
      */
-    select(value?: ISelectType[] | string | undefined): Query {
+    select(value?: ISelectType[] | string | undefined): QueryBuilder {
         if (this.queryType === undefined || this.queryType === 'SELECT') {
             this.queryType = 'SELECT';
             if (!value) {
@@ -145,12 +145,12 @@ export class Query extends BaseQuery {
      *
      * @example
      * ```ts
-     *   const result = new Query({}, 'travel-sample').index('DROP', 'travel_sample_id_test').build();
+     *   const result = new QueryBuilder({}, 'travel-sample').index('DROP', 'travel_sample_id_test').build();
      *   console.log(result)
      * ```
      * > DROP INDEX `travel-sample`.`travel_sample_id_test`
      */
-    index(type: IndexType, name: string): Query {
+    index(type: IndexType, name: string): QueryBuilder {
         if (this.queryType === undefined) {
             if (name.search(/^[A-Za-z][A-Za-z0-9#_]*$/g) === -1) {
                 throw new Error(
@@ -173,12 +173,12 @@ export class Query extends BaseQuery {
      * @example
      * ```ts
      *   const on = [{ name: 'travel-sample.callsing', sort: 'ASC' }];
-     *   const result = new Query({}, 'travel-sample').index('CREATE', 'travel_sample_id_test').on(on).build();
+     *   const result = new QueryBuilder({}, 'travel-sample').index('CREATE', 'travel_sample_id_test').on(on).build();
      *   console.log(result)
      * ```
      * > CREATE INDEX `travel_sample_id_test` ON `travel-sample`(`travel-sample.callsing`['ASC'])
      */
-    on(value: IIndexOnParams[]): Query {
+    on(value: IIndexOnParams[]): QueryBuilder {
         if (
             this.queryType === 'INDEX' &&
             ['CREATE', 'CREATE PRIMARY', 'BUILD'].includes(this.indexType || '')
@@ -196,12 +196,12 @@ export class Query extends BaseQuery {
      *
      * @example
      * ```ts
-     *   const result = new Query({}, 'travel-sample').index('CREATE', 'travel_sample_id_test').usingGSI().build();
+     *   const result = new QueryBuilder({}, 'travel-sample').index('CREATE', 'travel_sample_id_test').usingGSI().build();
      *   console.log(result)
      * ```
      * > CREATE INDEX `travel_sample_id_test` USING GSI)
      */
-    usingGSI(): Query {
+    usingGSI(): QueryBuilder {
         if (this.queryType === 'INDEX') {
             this.indexUsingGSI = true;
             return this;
@@ -217,12 +217,12 @@ export class Query extends BaseQuery {
      * @example
      * ```ts
      *   const withExpr = {nodes: ['192.168.1.1:8078'],defer_build: true,num_replica: 2};
-     *   const result = new Query({}, 'travel-sample').index('CREATE', 'travel_sample_id_test').with(withExpr).build();
+     *   const result = new QueryBuilder({}, 'travel-sample').index('CREATE', 'travel_sample_id_test').with(withExpr).build();
      *   console.log(result)
      * ```
      * > CREATE INDEX `travel_sample_id_test` WITH {'nodes': ['192.168.1.1:8078'],'defer_build': true,'num_replica': 2})
      */
-    with(value: IIndexWithParams): Query {
+    with(value: IIndexWithParams): QueryBuilder {
         if (this.queryType === 'INDEX') {
             this.indexWith = value;
             return this;
@@ -238,13 +238,13 @@ export class Query extends BaseQuery {
      * @example
      * ```ts
      *   const expr_where = {$or: [{ address: { $like: '%57-59%' } }, { free_breakfast: true }]};
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).where(expr_where).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample WHERE (address LIKE '%57-59%' OR free_breakfast = true)`
      */
-    where(value: LogicalWhereExpr): Query {
+    where(value: LogicalWhereExpr): QueryBuilder {
         this.whereExpr = value;
         return this;
     }
@@ -256,13 +256,13 @@ export class Query extends BaseQuery {
      *
      * @example
      * ```tS
-     *   const query = new Query({}, 'beer-sample brewery');
+     *   const query = new QueryBuilder({}, 'beer-sample brewery');
      *   const result = query.select([{$field: 'address'}]).plainJoin('JOIN `beer-sample` beer ON beer.brewery_id = LOWER(REPLACE(brewery.name, " ", "_"))').build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `beer-sample brewery` JOIN `beer-sample` beer ON beer.brewery_id = LOWER(REPLACE(brewery.name, " ", "_")) LIMIT 1`
      */
-    plainJoin(value: string): Query {
+    plainJoin(value: string): QueryBuilder {
         this.plainJoinExpr = value;
         return this;
     }
@@ -274,13 +274,13 @@ export class Query extends BaseQuery {
      *
      * @example
      * ```ts
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).orderBy({ size: 'DESC' }).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample ORDER BY size = 'DESC'`
      */
-    orderBy(value: Record<string, SortType>): Query {
+    orderBy(value: Record<string, SortType>): QueryBuilder {
         this.orderExpr = value;
         return this;
     }
@@ -292,13 +292,13 @@ export class Query extends BaseQuery {
      *
      * @example
      * ```ts
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).limit(10).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample LIMIT 10`
      */
-    limit(value: number): Query {
+    limit(value: number): QueryBuilder {
         this.limitExpr = value;
         return this;
     }
@@ -310,13 +310,13 @@ export class Query extends BaseQuery {
      *
      * @example
      * ```ts
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).offset(10).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample OFFSET 10`
      */
-    offset(value: number): Query {
+    offset(value: number): QueryBuilder {
         this.offSetExpr = value;
         return this;
     }
@@ -329,13 +329,13 @@ export class Query extends BaseQuery {
      * @example
      * ```ts
      *   const letExpr = [{ key: 'amount_val', value: 10 }];
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).let(letExpr).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample LET amount_val = 10`
      */
-    let(value: ILetExpr[]): Query {
+    let(value: ILetExpr[]): QueryBuilder {
         this.letExpr = value;
         return this;
     }
@@ -348,13 +348,13 @@ export class Query extends BaseQuery {
      * @example
      * ```ts
      *   const groupByExpr = [{ expr: 'COUNT(amount_val)', as: 'amount' }];
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).groupBy(groupByExpr).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample GROUP BY COUNT(amount) AS amount`
      */
-    groupBy(value: IGroupBy[]): Query {
+    groupBy(value: IGroupBy[]): QueryBuilder {
         this.groupByExpr = value;
         return this;
     }
@@ -368,13 +368,13 @@ export class Query extends BaseQuery {
      * ```ts
      *   const groupByExpr = [{ expr: 'COUNT(amount_val)', as: 'amount' }];
      *   const letExpr = [{ key: 'amount_val', value: 10 }];
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).groupBy(groupByExpr).let(letExpr).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample GROUP BY COUNT(amount) AS amount LETTING amount = 10`
      */
-    letting(value: ILetExpr[]): Query {
+    letting(value: ILetExpr[]): QueryBuilder {
         this.lettingExpr = value;
         return this;
     }
@@ -388,13 +388,13 @@ export class Query extends BaseQuery {
      * ```ts
      *   const groupByExpr = [{ expr: 'COUNT(amount_val)', as: 'amount' }];
      *   const having = {address: {$like: '%58%'}};
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).groupBy(groupByExpr).having(having).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample GROUP BY COUNT(amount) AS amount HAVING address LIKE '%58%'`
      */
-    having(value: LogicalWhereExpr): Query {
+    having(value: LogicalWhereExpr): QueryBuilder {
         this.havingExpr = value;
         return this;
     }
@@ -406,19 +406,19 @@ export class Query extends BaseQuery {
      *
      * @example
      * ```ts
-     *   const query = new Query({}, 'travel-sample');
+     *   const query = new QueryBuilder({}, 'travel-sample');
      *   const result = query.select([{$field: 'address'}]).useKeys(['airlineR_8093']).build()
      *   console.log(result)
      * ```
      * > SELECT address FROM `travel-sample USE KEYS ['airlineR_8093']`
      */
-    useKeys(value: string[]): Query {
+    useKeys(value: string[]): QueryBuilder {
         this.useKeysExpr = value;
         return this;
     }
 
     /**
-     * Converts the conditional parameters passed to the constructor to the properties of the N1QL Query.
+     * Converts the conditional parameters passed to the constructor to the properties of the N1QL QueryBuilder.
      * @method
      * @public
      *
