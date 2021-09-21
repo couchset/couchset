@@ -88,7 +88,7 @@ export const automateImplementation = <T>(
         @Field(() => [ClassModelType], {nullable: true})
         items: [typeof ClassModelType];
 
-        @Field({nullable: true})
+        @Field(() => Boolean, {nullable: true})
         hasNext?: boolean;
 
         @Field(() => GraphQLJSON, {nullable: true})
@@ -101,11 +101,11 @@ export const automateImplementation = <T>(
         @Query(() => PaginationClass)
         @UseMiddleware(authMiddleware)
         async [`${nameCamel}Pagination`](
-            @Arg('filter', {nullable: true}) filter?: string,
-            @Arg('sort', {nullable: true}) sort?: string,
-            @Arg('before', {nullable: true}) before?: Date,
-            @Arg('after', {nullable: true}) after?: Date,
-            @Arg('limit', {nullable: true}) limit = 10
+            @Arg('filter', () => String, {nullable: true}) filter?: string,
+            @Arg('sort', () => String, {nullable: true}) sort?: string,
+            @Arg('before', () => Date, {nullable: true}) before?: Date,
+            @Arg('after', () => Date, {nullable: true}) after?: Date,
+            @Arg('limit', () => Number, {nullable: true}) limit?: number
         ): Promise<{
             items: ClassModelTYPE[];
             hasNext: boolean;
@@ -117,7 +117,7 @@ export const automateImplementation = <T>(
                     sort,
                     before,
                     after,
-                    limit,
+                    limit: limit || 10,
                 },
                 identity
             );
@@ -170,8 +170,8 @@ export const automateImplementation = <T>(
         @Query(() => ResType)
         @UseMiddleware(authMiddleware)
         async [`${nameCamel}Get`](
-            @Arg('id', {nullable: false}) id: string,
-            @Arg('owner', {nullable: true}) owner: string
+            @Arg('id', () => String, {nullable: false}) id: string,
+            @Arg('owner', () => String, {nullable: true}) owner: string
         ): Promise<ResType> {
             try {
                 // Apply it from the methods
@@ -197,8 +197,8 @@ export const automateImplementation = <T>(
         @Mutation(() => ResType)
         @UseMiddleware(authMiddleware)
         async [`${nameCamel}Delete`](
-            @Arg('id', {nullable: false}) id: string,
-            @Arg('owner', {nullable: true}) owner: string
+            @Arg('id', () => String, {nullable: false}) id: string,
+            @Arg('owner', () => String, {nullable: true}) owner: string
         ): Promise<ResType> {
             try {
                 // Apply it from the methods
@@ -225,7 +225,7 @@ export const automateImplementation = <T>(
         @UseMiddleware(authMiddleware)
         async [`${nameCamel}Create`](
             // @ts-ignore
-            @Arg('args') args: ClassModelType
+            @Arg('args', () => ClassModelType) args: ClassModelType
         ): Promise<ResType> {
             try {
                 // Apply it from the methods

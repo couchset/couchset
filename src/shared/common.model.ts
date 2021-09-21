@@ -68,7 +68,7 @@ export const getPagination = <T>(c: T): any => {
         @Field(() => [c], {nullable: true})
         items: [typeof c];
 
-        @Field({nullable: true})
+        @Field(() => Boolean, {nullable: true})
         hasNext?: boolean;
 
         @Field(() => GraphQLJSON, {nullable: true})

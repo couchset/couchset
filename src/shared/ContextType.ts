@@ -21,7 +21,7 @@ export class ResType {
     @Field(() => Boolean)
     success: boolean;
 
-    @Field({nullable: true})
+    @Field(() => String, {nullable: true})
     message?: string;
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
