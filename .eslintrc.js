@@ -33,10 +33,10 @@ module.exports = {
         'import/named': 'off',
         'import/namespace': 'off',
 
-        "simple-import-sort/imports": "off",
-        "simple-import-sort/exports": "off",
-        "import/first": "off",
-        "import/newline-after-import": "off",
+        "simple-import-sort/imports": "error",
+        "simple-import-sort/exports": "error",
+        "import/first": "error",
+        "import/newline-after-import": "error"
 
     },
     settings: {},
