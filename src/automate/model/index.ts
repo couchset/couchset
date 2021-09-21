@@ -25,7 +25,7 @@ interface PaginationResults {
     params: any;
 }
 
-interface Options {
+export interface AutomaticModelOptions {
     model: Model;
 
     authMiddleware?: any; // authentication middleware
@@ -61,7 +61,10 @@ interface Options {
  * @param c
  * @returns
  */
-export const AutoMateImplementation = <T>(ClassModelType: T & ClassType, options: Options) => {
+export const automateImplementation = <T>(
+    ClassModelType: T & ClassType,
+    options: AutomaticModelOptions
+) => {
     const createUpdateOptions = options?.createUpdate;
     const deleteByIdOptions = options?.deleteById;
     const getByIdOptions = options?.getById;

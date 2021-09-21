@@ -1,9 +1,10 @@
-import CouchbaseConnection from './connection';
-import {Pagination} from './pagination';
-import {generateUUID} from './uuid';
+import CouchbaseConnection from '../connection';
+import {Pagination} from '../pagination';
+import {generateUUID} from '../uuid';
 import {Collection} from 'couchbase';
-import {parseSchema, SchemaTypes} from './utils/utils.schema';
-import {CustomQuery, CustomQueryPagination} from './search';
+import {parseSchema, SchemaTypes} from '../utils';
+import {CustomQuery, CustomQueryPagination} from '../search';
+import {automateImplementation, AutomaticModelOptions} from '../automate';
 
 export interface AutoModelFields {
     id: string;
@@ -17,6 +18,7 @@ export interface AutoModelFields {
 interface ModalOptions {
     scope?: string;
     schema?: Record<string, SchemaTypes>;
+    graphType?: any;
 }
 
 export class Model {
@@ -27,11 +29,13 @@ export class Model {
         createdAt: 'date',
         updatedAt: 'date',
     };
+    graphType = null;
 
     constructor(name: string, options?: ModalOptions) {
         // this.collection = CouchbaseConnection.Instance.getCollection();
         this.collectionName = name;
         if (options) {
+            this.graphType = (options && options.graphType) || null;
             this.scope = (options && options.scope) || '_default';
             this.schema = {
                 ...((options && options.schema) || {}),
@@ -249,6 +253,16 @@ export class Model {
     public parse<T>(data: T): T {
         this.fresh(); // refresh
         return parseSchema(this.schema, data);
+    }
+
+    /**
+     *
+     * @param args AutomaticModelOptions
+     * @returns
+     */
+    public automate(args: AutomaticModelOptions) {
+        this.fresh(); // refresh
+        return automateImplementation(this.graphType, {model: this, ...args});
     }
 }
 
