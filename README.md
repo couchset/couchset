@@ -215,9 +215,9 @@ TODO
 - Create automatic pagination ✅
 - Create Schema and validation/population ✅
 - Create static methods for models like `save`, `update`, `findMany` e.t.c ✅
-- Automated indexes
-- Geospatial queries
-- FTS queries
+- Automated indexes (only couchbase enterprise) ✅
+- Geospatial queries ✅
+- FTS queries ✅
 
 
 
