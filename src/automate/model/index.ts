@@ -15,6 +15,7 @@ import {
     Resolver,
     Query,
 } from 'type-graphql';
+import {DocumentNode} from 'graphql';
 import {isAuth} from '../middlewares';
 import {createUpdate, ResType} from '../../shared';
 import {generateClient} from './client';
@@ -58,6 +59,13 @@ export interface AutomaticMethodOptions {
     // fragmentMapping
 }
 
+export interface AutomaticOutput {
+    pagination: ClassType;
+    resolver: ClassType;
+    modelKeys: string[];
+    client: Record<string, DocumentNode>;
+}
+
 /**
  *
  * @param c
@@ -66,7 +74,7 @@ export interface AutomaticMethodOptions {
 export const automateImplementation = <T>(
     ClassModelType: T & ClassType,
     options: AutomaticModelOptions
-) => {
+): AutomaticOutput => {
     const createUpdateOptions = options?.createUpdate;
     const deleteByIdOptions = options?.deleteById;
     const getByIdOptions = options?.getById;

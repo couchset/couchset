@@ -32,8 +32,12 @@ module.exports = {
         'import/no-unresolved': 'off',
         'import/named': 'off',
         'import/namespace': 'off',
-        'simple-import-sort/sort': 'off',
-        'sort-imports': 'off',
+
+        "simple-import-sort/imports": "off",
+        "simple-import-sort/exports": "off",
+        "import/first": "off",
+        "import/newline-after-import": "off",
+
     },
     settings: {},
 };
