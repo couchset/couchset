@@ -9,7 +9,7 @@
     "outDir": "dist",
     "module": "commonjs",
     "moduleResolution": "node",
-    "declaration": true,
+    "declaration": false,
     "sourceMap": true,
     "inlineSources": true,
     "esModuleInterop": true,
@@ -18,7 +18,8 @@
       "node"
     ],
     "resolveJsonModule": true,
-    "downlevelIteration": true
+    "downlevelIteration": true,
+    "experimentalDecorators": true,
   },
   "exclude": [
     "src/**/*test.ts",

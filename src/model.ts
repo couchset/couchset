@@ -54,6 +54,20 @@ export class Model {
     /** Get this collection
      * getCollection
      */
+    public getBucketName(): string {
+        return CouchbaseConnection.Instance.bucketName;
+    }
+
+    /** Get this collection
+     * getCollection
+     */
+    public couchbaseConnection(): CouchbaseConnection {
+        return CouchbaseConnection.Instance;
+    }
+
+    /** Get this collection
+     * getCollection
+     */
     public getCollection(): Collection {
         this.fresh();
         return this.collection;
