@@ -17,7 +17,7 @@ import {DocumentNode} from 'graphql';
 
 import {awaitTo, log} from '../../utils';
 import {Model} from '../../model';
-import {isAuth} from '../middlewares';
+import {blankMiddleware, isAuth} from '../middlewares';
 import {createUpdate, ResType} from '../../shared';
 
 import {generateClient} from './client';
@@ -79,8 +79,14 @@ export const automateImplementation = <T>(
     ClassModelType: T & ClassType,
     options: AutomaticModelOptions
 ): AutomaticOutput => {
+    // createUpdate
     const createUpdateOptions = options?.createUpdate;
+    const createUpdateOptionsPublic = options?.createUpdate.public;
+
+    // deleteById
     const deleteByIdOptions = options?.deleteById;
+    const deleteByIdOptionsPublic = options?.deleteById.public;
+
     const getByIdOptions = options?.getById;
     const paginationOptions = options?.pagination;
 
@@ -207,7 +213,7 @@ export const automateImplementation = <T>(
         }
 
         @Mutation(() => ResType)
-        @UseMiddleware(authMiddleware)
+        @UseMiddleware(deleteByIdOptionsPublic ? blankMiddleware : authMiddleware)
         async [`${nameCamel}Delete`](
             @Arg('id', () => String, {nullable: false}) id: string,
             @Arg('owner', () => String, {nullable: true}) owner: string
@@ -234,7 +240,7 @@ export const automateImplementation = <T>(
         }
 
         @Mutation(() => ResType)
-        @UseMiddleware(authMiddleware)
+        @UseMiddleware(createUpdateOptionsPublic ? blankMiddleware : authMiddleware)
         async [`${nameCamel}Create`](
             // @ts-ignore
             @Arg('args', () => ClassModelType) args: ClassModelType
