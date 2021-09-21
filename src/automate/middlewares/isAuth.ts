@@ -27,3 +27,5 @@ export const isAuth: MiddlewareFn<ContextType> = (args, next) => {
 
     return next();
 };
+
+export default isAuth;

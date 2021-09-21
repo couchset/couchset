@@ -49,11 +49,13 @@ export interface AutomaticMethodOptions {
 
     // Mutations
     deleteById?: {
+        public?: boolean; // NEVER SET IN PROD
         method?: (args: any) => Promise<ResType>;
         matchOwner?: boolean;
     };
 
     createUpdate?: {
+        public?: boolean; // NEVER SET IN PROD
         method?: <T>(args: T) => Promise<ResType>;
     };
 
