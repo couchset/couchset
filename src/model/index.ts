@@ -5,7 +5,7 @@ import {Pagination} from '../pagination';
 import {generateUUID} from '../uuid';
 import {parseSchema, SchemaTypes} from '../utils';
 import {CustomQuery, CustomQueryPagination} from '../search';
-import {automateImplementation, AutomaticMethodOptions} from '../automate';
+import {automateImplementation, AutomaticMethodOptions, AutomaticOutput} from '../automate';
 
 export interface AutoModelFields {
     id: string;
@@ -273,7 +273,7 @@ export class Model {
      * @param args AutomaticModelOptions
      * @returns
      */
-    public automate(args?: Partial<AutomaticMethodOptions>) {
+    public automate(args?: Partial<AutomaticMethodOptions>): AutomaticOutput {
         this.fresh(); // refresh
         return automateImplementation(this.graphqlType, {model: this, ...args});
     }

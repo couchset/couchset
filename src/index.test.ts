@@ -18,13 +18,8 @@ before((done) => {
 
 let sampleData = null;
 
-@ObjectType()
-class UserType {
-    @Field(() => String, {nullable: true })
-    id: string = "";
-};
 
-const model = new Model('User', {schema: {createdAt: 'date'}, graphqlType: UserType });
+const model = new Model('User', {schema: {createdAt: 'date'} });
 
 describe('CouchSet', () => {
     it('should insert into couchbase', async () => {
@@ -98,13 +93,5 @@ describe('CouchSet', () => {
 
         expect(query).to.be.not.null;
     });
-
-    it('should create automate model', async () => {
-        
-        const { client } = model.automate();
-
-        console.log('client generated is', client);
-
-        expect(client).to.be.not.null;
-    });
+    
 });
