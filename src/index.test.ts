@@ -1,6 +1,7 @@
 import 'mocha';
 import {expect} from 'chai';
 import {couchset, Model, Query} from './index';
+import { Field } from 'type-graphql';
 
 before((done) => {
     couchset({
@@ -17,7 +18,12 @@ before((done) => {
 
 let sampleData = null;
 
-const model = new Model('User', {schema: {createdAt: 'date'}});
+class modelType {
+    @Field(() => String, {nullable: true });
+    id: string = "";
+};
+
+const model = new Model('User', {schema: {createdAt: 'date'}, graphqlType: modelType });
 
 describe('CouchSet', () => {
     it('should insert into couchbase', async () => {
@@ -93,11 +99,11 @@ describe('CouchSet', () => {
     });
 
     it('should create automate model', async () => {
-        const dbName = 'stq';
-        const query = new Query({}, dbName).select('*').build();
+        
+        const { client } = model.automate();
 
-        console.log('query is', query);
+        console.log('client generated is', client);
 
-        expect(query).to.be.not.null;
+        expect(client).to.be.not.null;
     });
 });

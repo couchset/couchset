@@ -269,7 +269,7 @@ export class Model {
      * @param args AutomaticModelOptions
      * @returns
      */
-    public automate(args: AutomaticMethodOptions) {
+    public automate(args?: Partial<AutomaticMethodOptions>) {
         this.fresh(); // refresh
         return automateImplementation(this.graphqlType, {model: this, ...args});
     }
