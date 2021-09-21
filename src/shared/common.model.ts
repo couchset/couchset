@@ -77,7 +77,7 @@ export const getPagination = <T>(c: T): any => {
     return Pagination;
 };
 
-export interface ResType {
+export interface IResType {
     success: boolean;
     message?: string;
     data?: any;

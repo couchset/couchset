@@ -1,6 +1,6 @@
 import camelCase from 'lodash/camelCase';
 import gql from 'graphql-tag';
-import {ResTypeFragment} from '@stoqey/client-graphql';
+import {ResTypeFragment} from '../../shared';
 import {isEmpty} from 'lodash';
 
 interface Props {
