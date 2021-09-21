@@ -73,7 +73,7 @@ export const getPagination = <T>(c: T): any => {
         hasNext?: boolean;
 
         @Field(() => GraphQLJSON, {nullable: true})
-        params?: any;
+        params?: typeof GraphQLJSON;
     }
     return Pagination;
 };
