@@ -91,4 +91,13 @@ describe('CouchSet', () => {
 
         expect(query).to.be.not.null;
     });
+
+    it('should create automate model', async () => {
+        const dbName = 'stq';
+        const query = new Query({}, dbName).select('*').build();
+
+        console.log('query is', query);
+
+        expect(query).to.be.not.null;
+    });
 });

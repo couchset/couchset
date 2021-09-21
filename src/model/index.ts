@@ -4,7 +4,7 @@ import {generateUUID} from '../uuid';
 import {Collection} from 'couchbase';
 import {parseSchema, SchemaTypes} from '../utils';
 import {CustomQuery, CustomQueryPagination} from '../search';
-import {automateImplementation, AutomaticModelOptions} from '../automate';
+import {automateImplementation, AutomaticMethodOptions} from '../automate';
 
 export interface AutoModelFields {
     id: string;
@@ -18,7 +18,7 @@ export interface AutoModelFields {
 interface ModalOptions {
     scope?: string;
     schema?: Record<string, SchemaTypes>;
-    graphType?: any;
+    graphqlType?: any;
 }
 
 export class Model {
@@ -29,13 +29,13 @@ export class Model {
         createdAt: 'date',
         updatedAt: 'date',
     };
-    graphType = null;
+    graphqlType = null;
 
     constructor(name: string, options?: ModalOptions) {
         // this.collection = CouchbaseConnection.Instance.getCollection();
         this.collectionName = name;
         if (options) {
-            this.graphType = (options && options.graphType) || null;
+            this.graphqlType = (options && options.graphqlType) || null;
             this.scope = (options && options.scope) || '_default';
             this.schema = {
                 ...((options && options.schema) || {}),
@@ -43,6 +43,15 @@ export class Model {
                 updatedAt: 'date',
             };
         }
+    }
+
+    /**
+     * Set setGraphqlType
+     * setGraphqlType
+     */
+    public setGraphqlType(gqlType: any): Model {
+        this.graphqlType = gqlType;
+        return this;
     }
 
     /**
@@ -260,9 +269,9 @@ export class Model {
      * @param args AutomaticModelOptions
      * @returns
      */
-    public automate(args: AutomaticModelOptions) {
+    public automate(args: AutomaticMethodOptions) {
         this.fresh(); // refresh
-        return automateImplementation(this.graphType, {model: this, ...args});
+        return automateImplementation(this.graphqlType, {model: this, ...args});
     }
 }
 

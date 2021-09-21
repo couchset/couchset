@@ -25,9 +25,11 @@ interface PaginationResults {
     params: any;
 }
 
-export interface AutomaticModelOptions {
+export interface AutomaticModelOptions extends AutomaticMethodOptions {
     model: Model;
+}
 
+export interface AutomaticMethodOptions {
     authMiddleware?: any; // authentication middleware
 
     // Query
