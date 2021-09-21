@@ -1,7 +1,8 @@
+import {Collection} from 'couchbase';
+
 import CouchbaseConnection from '../connection';
 import {Pagination} from '../pagination';
 import {generateUUID} from '../uuid';
-import {Collection} from 'couchbase';
 import {parseSchema, SchemaTypes} from '../utils';
 import {CustomQuery, CustomQueryPagination} from '../search';
 import {automateImplementation, AutomaticMethodOptions} from '../automate';

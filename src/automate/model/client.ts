@@ -1,7 +1,8 @@
 import camelCase from 'lodash/camelCase';
 import gql from 'graphql-tag';
-import {ResTypeFragment} from '../../shared';
 import {isEmpty} from 'lodash';
+
+import {ResTypeFragment} from '../../shared';
 
 interface Props {
     name: string;

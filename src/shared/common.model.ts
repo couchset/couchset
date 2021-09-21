@@ -1,6 +1,7 @@
 import {ObjectType, Field} from 'type-graphql';
 import GraphQLJSON from 'graphql-type-json';
 import gql from 'graphql-tag';
+
 import {Model} from '../model';
 
 @ObjectType()

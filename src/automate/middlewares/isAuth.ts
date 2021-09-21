@@ -1,6 +1,7 @@
 import {verify} from 'jsonwebtoken';
 import {MiddlewareFn} from 'type-graphql';
 import {isEmpty, get as _get} from 'lodash';
+
 import {ContextType} from '../../shared';
 
 /**

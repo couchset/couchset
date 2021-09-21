@@ -2,6 +2,7 @@ import {Request, Response} from 'express';
 import {ObjectType, Field, InputType} from 'type-graphql';
 import GraphQLJSON from 'graphql-type-json';
 import {RedisPubSub} from 'graphql-redis-subscriptions';
+
 export interface ContextType {
     req: Request;
     res: Response;

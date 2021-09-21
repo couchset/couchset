@@ -4,6 +4,7 @@
 import {ExportDeclarationStructure, StructureKind} from 'ts-morph';
 import isEmpty from 'lodash/isEmpty';
 import {DocumentNode} from 'graphql';
+
 import {toSnakeUpper} from '../../utils';
 import {writeTsFile} from '../writer';
 import {isDev} from '../../config';

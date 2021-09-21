@@ -2,8 +2,6 @@
 import camelCase from 'lodash/camelCase';
 import pickBy from 'lodash/pickBy';
 import GraphQLJSON from 'graphql-type-json';
-import {Model} from '../../model';
-import {awaitTo, log} from '../../utils';
 import {identity} from 'lodash';
 import {
     Field,
@@ -16,8 +14,12 @@ import {
     Query,
 } from 'type-graphql';
 import {DocumentNode} from 'graphql';
+
+import {awaitTo, log} from '../../utils';
+import {Model} from '../../model';
 import {isAuth} from '../middlewares';
 import {createUpdate, ResType} from '../../shared';
+
 import {generateClient} from './client';
 
 interface PaginationResults {

@@ -45,6 +45,7 @@ module.exports = {
         "env": { "node": true },
         "rules": {
             "simple-import-sort/imports": "off",
+            "simple-import-sort/exports": "off",
             "import/order": ["error", { "newlines-between": "always" }]
         }
     }],

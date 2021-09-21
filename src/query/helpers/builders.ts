@@ -17,6 +17,15 @@ import {
     SortType,
 } from '../interface/query.types';
 import {
+    InWithinOperatorExceptions,
+    QueryGroupByParamsException,
+    QueryOperatorNotFoundException,
+    SelectClauseException,
+    WhereClauseException,
+} from '../exceptions';
+import {escapeReservedWords} from '../utils';
+
+import {
     AggDict,
     CollectionInWithinOperatorDict,
     CollectionSatisfiesOperatorDict,
@@ -29,14 +38,6 @@ import {
     ResultExprDict,
     ReturnResultDict,
 } from './dictionary';
-import {
-    InWithinOperatorExceptions,
-    QueryGroupByParamsException,
-    QueryOperatorNotFoundException,
-    SelectClauseException,
-    WhereClauseException,
-} from '../exceptions';
-import {escapeReservedWords} from '../utils';
 
 // select expressions functions
 /**
