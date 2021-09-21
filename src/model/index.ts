@@ -62,7 +62,10 @@ export class Model {
      * to avoid error `Cannot read property 'defaultCollection' of null`
      */
     public fresh(): void {
-        this.collection = CouchbaseConnection.Instance.getCollection();
+        // if couchbase connection has been init
+        if (CouchbaseConnection.Instance.bucketName) {
+            this.collection = CouchbaseConnection.Instance.getCollection();
+        }
     }
 
     /** Get this collection

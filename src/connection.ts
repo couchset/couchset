@@ -20,10 +20,10 @@ export class CouchbaseConnection implements CouchsetArgs {
     cluster: Cluster = null;
 
     // Args
-    connectionString: string;
-    bucketName: string;
-    username: string;
-    password: string;
+    connectionString: string = null;
+    bucketName: string = null;
+    username: string = null;
+    password: string = null;
 
     public static get Instance(): CouchbaseConnection {
         return this._instance || (this._instance = new this());
