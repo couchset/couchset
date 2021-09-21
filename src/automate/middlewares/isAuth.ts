@@ -8,7 +8,8 @@ import {ContextType} from '../../shared';
  * Default isAuth middleware
  * @returns
  */
-export const isAuth: MiddlewareFn<ContextType> = ({context}, next) => {
+export const isAuth: MiddlewareFn<ContextType> = (args, next) => {
+    const context: any = (args && args.context) || {};
     const authorization = _get(context, 'req.headers.authorization', '');
 
     if (isEmpty(authorization)) {
