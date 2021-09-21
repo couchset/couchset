@@ -81,11 +81,11 @@ export const automateImplementation = <T>(
 ): AutomaticOutput => {
     // createUpdate
     const createUpdateOptions = options?.createUpdate;
-    const createUpdateOptionsPublic = options?.createUpdate.public;
+    const createUpdateOptionsPublic = options?.createUpdate?.public;
 
     // deleteById
     const deleteByIdOptions = options?.deleteById;
-    const deleteByIdOptionsPublic = options?.deleteById.public;
+    const deleteByIdOptionsPublic = options?.deleteById?.public;
 
     const getByIdOptions = options?.getById;
     const paginationOptions = options?.pagination;
