@@ -28,6 +28,8 @@ interface PaginationResults {
 interface Options {
     model: Model;
 
+    authMiddleware?: any; // authentication middleware
+
     // Query
     pagination?: {
         public?: boolean;
@@ -74,6 +76,8 @@ export const AutoMateImplementation = <T>(ClassModelType: T & ClassType, options
     // const nameSNAKE_CASE = toUpper(snakeCase(name));
     const modelKeys: string[] = Object.getOwnPropertyNames(new ClassModelType());
 
+    const authMiddleware = options.authMiddleware || isAuth;
+
     @ObjectType(`${nameCamel}Pagination`)
     class PaginationClass {
         @Field(() => [ClassModelType], {nullable: true})
@@ -90,7 +94,7 @@ export const AutoMateImplementation = <T>(ClassModelType: T & ClassType, options
     @Resolver()
     class ResolverClass {
         @Query(() => PaginationClass)
-        @UseMiddleware(isAuth)
+        @UseMiddleware(authMiddleware)
         async [`${nameCamel}Pagination`](
             @Arg('filter', {nullable: true}) filter?: string,
             @Arg('sort', {nullable: true}) sort?: string,
@@ -159,7 +163,7 @@ export const AutoMateImplementation = <T>(ClassModelType: T & ClassType, options
         }
 
         @Query(() => ResType)
-        @UseMiddleware(isAuth)
+        @UseMiddleware(authMiddleware)
         async [`${nameCamel}Get`](
             @Arg('id', {nullable: false}) id: string,
             @Arg('owner', {nullable: true}) owner: string
@@ -186,7 +190,7 @@ export const AutoMateImplementation = <T>(ClassModelType: T & ClassType, options
         }
 
         @Mutation(() => ResType)
-        @UseMiddleware(isAuth)
+        @UseMiddleware(authMiddleware)
         async [`${nameCamel}Delete`](
             @Arg('id', {nullable: false}) id: string,
             @Arg('owner', {nullable: true}) owner: string
@@ -213,7 +217,7 @@ export const AutoMateImplementation = <T>(ClassModelType: T & ClassType, options
         }
 
         @Mutation(() => ResType)
-        @UseMiddleware(isAuth)
+        @UseMiddleware(authMiddleware)
         async [`${nameCamel}Create`](
             // @ts-ignore
             @Arg('args') args: ClassModelType
