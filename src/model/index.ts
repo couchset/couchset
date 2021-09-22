@@ -72,7 +72,7 @@ export class Model {
      * getCollection
      */
     public getBucketName(): string {
-        return CouchbaseConnection.Instance.bucketName;
+        return CouchbaseConnection.Instance?.getBucket();
     }
 
     /** Get this collection

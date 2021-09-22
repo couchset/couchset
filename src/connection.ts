@@ -64,6 +64,10 @@ export class CouchbaseConnection implements CouchsetArgs {
         return this.cluster;
     };
 
+    public getBucket = (): string => {
+        return this.bucketName;
+    };
+
     /**
      * shutdown cluster
      */
