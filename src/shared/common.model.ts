@@ -1,6 +1,9 @@
 import {ObjectType, Field} from 'type-graphql';
 import GraphQLJSON from 'graphql-type-json';
 import gql from 'graphql-tag';
+import isEmpty from 'lodash/isEmpty';
+import identity from 'lodash/identity';
+import pickBy from 'lodash/pickBy';
 
 import {Model} from '../model';
 
@@ -42,9 +45,11 @@ interface CreateUpdate {
 }
 
 export const createUpdate = async <T>(args: CreateUpdate): Promise<T | null> => {
-    const {model, id, data} = args;
+    const {model, id} = args;
+    const data: any = pickBy(args.data, identity);
+
     try {
-        if (id) {
+        if (!isEmpty(id)) {
             // update
             await model.updateById(id, data);
             return data;

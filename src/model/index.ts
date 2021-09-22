@@ -97,7 +97,7 @@ export class Model {
         this.fresh();
         const id = generateUUID();
         const createdData = {
-            id, // let id be overriden
+            id, // let id be override
             ...data,
             createdAt: new Date(),
             updatedAt: new Date(), // same as created at

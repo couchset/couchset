@@ -6,8 +6,11 @@ import {ContextType} from '../../shared';
  * Default isAuth middleware
  * @returns
  */
-export const blankMiddleware: MiddlewareFn<ContextType> | MiddlewareFn<void> = (_args, next) => {
-    return next ? next() : (() => {})();
+export const blankMiddleware: MiddlewareFn<ContextType> | MiddlewareFn<void> = ({}, next) => {
+    if (next) {
+        return next();
+    }
+    return null;
 };
 
 export default blankMiddleware;

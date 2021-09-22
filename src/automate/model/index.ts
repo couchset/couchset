@@ -12,12 +12,13 @@ import {
     ClassType,
     Resolver,
     Query,
+    InputType,
 } from 'type-graphql';
 import {DocumentNode} from 'graphql';
 
 import {awaitTo, log} from '../../utils';
 import {Model} from '../../model';
-import {blankMiddleware, isAuth} from '../middlewares';
+import {isAuth} from '../middlewares';
 import {createUpdate, ResType} from '../../shared';
 
 import {generateClient} from './client';
@@ -87,8 +88,13 @@ export const automateImplementation = <T>(
     const deleteByIdOptions = options?.deleteById;
     const deleteByIdOptionsPublic = options?.deleteById?.public;
 
+    // getById
     const getByIdOptions = options?.getById;
+    const getByIdOptionsPublic = options?.getById?.public;
+
+    // pagination
     const paginationOptions = options?.pagination;
+    const paginationOptionsPublic = options?.pagination?.public;
 
     type ClassModelTYPE = typeof ClassModelType;
 
@@ -101,6 +107,9 @@ export const automateImplementation = <T>(
 
     const authMiddleware = options.authMiddleware || isAuth;
 
+    const blankMiddleware = [];
+
+    @InputType(`${nameCamel}PaginationInput`)
     @ObjectType(`${nameCamel}Pagination`)
     class PaginationClass {
         @Field(() => [ClassModelType], {nullable: true})
@@ -109,15 +118,16 @@ export const automateImplementation = <T>(
         @Field(() => Boolean, {nullable: true})
         hasNext?: boolean;
 
-        @Field(() => GraphQLJSON, {nullable: true})
-        params?: typeof GraphQLJSON;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        @Field((type) => GraphQLJSON, {nullable: true})
+        params?: any;
     }
     // return Pagination;
 
     @Resolver()
     class ResolverClass {
         @Query(() => PaginationClass)
-        @UseMiddleware(authMiddleware)
+        @UseMiddleware(paginationOptionsPublic ? blankMiddleware : authMiddleware)
         async [`${nameCamel}Pagination`](
             @Arg('filter', () => String, {nullable: true}) filter?: string,
             @Arg('sort', () => String, {nullable: true}) sort?: string,
@@ -186,7 +196,7 @@ export const automateImplementation = <T>(
         }
 
         @Query(() => ResType)
-        @UseMiddleware(authMiddleware)
+        @UseMiddleware(getByIdOptionsPublic ? blankMiddleware : authMiddleware)
         async [`${nameCamel}Get`](
             @Arg('id', () => String, {nullable: false}) id: string,
             @Arg('owner', () => String, {nullable: true}) owner: string
@@ -218,6 +228,7 @@ export const automateImplementation = <T>(
             @Arg('id', () => String, {nullable: false}) id: string,
             @Arg('owner', () => String, {nullable: true}) owner: string
         ): Promise<ResType> {
+            log(`${nameCamel}Delete -->`, {id, owner});
             try {
                 // Apply it from the methods
                 if (deleteByIdOptions && deleteByIdOptions.method) {
@@ -245,6 +256,8 @@ export const automateImplementation = <T>(
             // @ts-ignore
             @Arg('args', () => ClassModelType) args: ClassModelType
         ): Promise<ResType> {
+            log(`${nameCamel}Create -->`, args);
+
             try {
                 // Apply it from the methods
                 if (createUpdateOptions && createUpdateOptions.method) {

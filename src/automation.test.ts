@@ -29,7 +29,7 @@ const model = new Model('User', {schema: {createdAt: 'date'}, graphqlType: UserT
 describe('CouchSet', () => {
     it('should create automate model', async () => {
         
-        const { client } = model.automate({ createUpdate: { public: true }});
+        const { client, resolver } = model.automate({ createUpdate: { public: true }});
 
         console.log('client generated is', client);
 
