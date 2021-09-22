@@ -133,19 +133,21 @@ export const automateImplementation = <T>(
             @Arg('sort', () => String, {nullable: true}) sort?: string,
             @Arg('before', () => Date, {nullable: true}) before?: Date,
             @Arg('after', () => Date, {nullable: true}) after?: Date,
-            @Arg('limit', () => Number, {nullable: true}) limit?: number
+            @Arg('limit', () => Number, {nullable: true}) limitArg?: number
         ): Promise<{
             items: ClassModelTYPE[];
             hasNext: boolean;
             params: any;
         }> {
+            const limit = limitArg || 10;
+
             const copyParams = pickBy(
                 {
                     filter,
                     sort,
                     before,
                     after,
-                    limit: limit || 10,
+                    limit,
                 },
                 identity
             );
@@ -195,12 +197,12 @@ export const automateImplementation = <T>(
             }
         }
 
-        @Query(() => ResType)
+        @Query(() => ClassModelType)
         @UseMiddleware(getByIdOptionsPublic ? blankMiddleware : authMiddleware)
         async [`${nameCamel}Get`](
             @Arg('id', () => String, {nullable: false}) id: string,
-            @Arg('owner', () => String, {nullable: true}) owner: string
-        ): Promise<ResType> {
+            @Arg('owner', () => String, {nullable: true}) owner?: string
+        ): Promise<typeof ClassModelType> {
             try {
                 // Apply it from the methods
                 if (getByIdOptions && getByIdOptions.method) {
@@ -213,12 +215,10 @@ export const automateImplementation = <T>(
                     throw new Error(`${nameCamel} not found`);
                 }
 
-                return {
-                    success: true,
-                };
+                return foundDocument;
             } catch (error) {
                 log(`error finding ${nameCamel}`, error);
-                return {success: false, message: error && error.message};
+                return null;
             }
         }
 
@@ -226,7 +226,7 @@ export const automateImplementation = <T>(
         @UseMiddleware(deleteByIdOptionsPublic ? blankMiddleware : authMiddleware)
         async [`${nameCamel}Delete`](
             @Arg('id', () => String, {nullable: false}) id: string,
-            @Arg('owner', () => String, {nullable: true}) owner: string
+            @Arg('owner', () => String, {nullable: true}) owner?: string
         ): Promise<ResType> {
             log(`${nameCamel}Delete -->`, {id, owner});
             try {
