@@ -183,14 +183,7 @@ export const automateImplementation = <T>(
 
                 const [rows = [], options = {hasNext: false, params: copyParams}] = data;
 
-                const dataToSend = rows.map((d) => {
-                    const {chat, attachments, owner} = d;
-                    return ClassModel.parse({
-                        ...chat,
-                        attachments,
-                        owner: owner[0] || null,
-                    });
-                });
+                const dataToSend = rows.map((d) => ClassModel.parse(d));
 
                 return {items: dataToSend, ...options};
             } catch (error) {
