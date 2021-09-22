@@ -152,6 +152,8 @@ export const automateImplementation = <T>(
                 identity
             );
 
+            log(`${nameCamel}Pagination -->`, copyParams);
+
             try {
                 // Apply it from the methods
                 if (paginationOptions && paginationOptions.method) {
@@ -204,6 +206,7 @@ export const automateImplementation = <T>(
             @Arg('owner', () => String, {nullable: true}) owner?: string
         ): Promise<typeof ClassModelType> {
             try {
+                log(`${nameCamel}Get -->`, {id, owner});
                 // Apply it from the methods
                 if (getByIdOptions && getByIdOptions.method) {
                     return await getByIdOptions.method({id, owner});
