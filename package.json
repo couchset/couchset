@@ -37,6 +37,7 @@
         "url": "git+https://github.com/couchset/couchset.git"
     },
     "keywords": [
+        "couchset",
         "couchbase",
         "couchset",
         "database",

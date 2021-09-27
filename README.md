@@ -21,6 +21,8 @@
 
 CouchSet is a Couchbase ORM & Automatic GraphQL API code generator (Resolver/Queries) tool
 
+- [Install](#install)
+- [License](#license)
 
 ## 1. Install
 ```bash
@@ -229,3 +231,6 @@ TODO
 <p align="center">
   <h1 align="center"> Algo Inc </h1>
 </p>
+
+## License	
+Couchset is [MIT licensed](./LICENSE).
