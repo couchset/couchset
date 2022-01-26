@@ -752,10 +752,10 @@ cosmiconfig@^7.0.0:
     path-type "^4.0.0"
     yaml "^1.10.0"
 
-couchbase@^3.2.1:
-  version "3.2.2"
-  resolved "https://registry.yarnpkg.com/couchbase/-/couchbase-3.2.2.tgz"
-  integrity sha512-/Lhd49L/fD3KvcDsqgsaFIiwRKSXkf4ejBK9B8mL8iXCFfnLZe4Re0EGPPVPXjGTITGDVjCHBQy3LSk2AfBADw==
+couchbase@^3.2.4:
+  version "3.2.4"
+  resolved "https://registry.yarnpkg.com/couchbase/-/couchbase-3.2.4.tgz#ba879c02a5079cd8487bc0fe2fb8d5d397678c5d"
+  integrity sha512-Tp1o7ARj1U4WtYoSaKo3PBzNEurbqizwLxe+em7LlwfWDyf1WxGUUFu1Gy7okq3CFZPFdtUUMAh++oDJu/piVA==
   dependencies:
     bindings "^1.5.0"
     debug "^4.3.2"
