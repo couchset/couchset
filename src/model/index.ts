@@ -1,11 +1,11 @@
-import {Collection} from 'couchbase';
+import {Collection, GetOptions, RemoveOptions, ReplaceOptions, UpsertOptions} from 'couchbase';
 
+import {AutomaticMethodOptions, AutomaticOutput, automateImplementation} from '../automate';
+import {CustomQuery, CustomQueryPagination} from '../search';
+import {SchemaTypes, parseSchema} from '../utils';
 import CouchbaseConnection from '../connection';
 import {Pagination} from '../pagination';
 import {generateUUID} from '../uuid';
-import {parseSchema, SchemaTypes} from '../utils';
-import {CustomQuery, CustomQueryPagination} from '../search';
-import {automateImplementation, AutomaticMethodOptions, AutomaticOutput} from '../automate';
 
 export interface AutoModelFields {
     id: string;
@@ -93,7 +93,7 @@ export class Model {
     /**
      * create
      */
-    public async create<T>(data: T): Promise<T & AutoModelFields> {
+    public async create<T>(data: T, options?: UpsertOptions): Promise<T & AutoModelFields> {
         this.fresh();
         const id = generateUUID();
         const createdData = {
@@ -106,7 +106,7 @@ export class Model {
         };
 
         try {
-            await this.collection.upsert(createdData.id, createdData);
+            await this.collection.upsert(createdData.id, createdData, options);
             return parseSchema(this.schema, createdData);
         } catch (error) {
             throw error;
@@ -116,10 +116,10 @@ export class Model {
     /**
      * findById
      */
-    public async findById(id: string): Promise<any & AutoModelFields> {
+    public async findById(id: string, options?: GetOptions): Promise<any & AutoModelFields> {
         this.fresh();
         try {
-            const data = await this.collection.get(id);
+            const data = await this.collection.get(id, options);
             return parseSchema(this.schema, data.content);
         } catch (error) {
             throw error;
@@ -129,7 +129,7 @@ export class Model {
     /**
      * update
      */
-    public async updateById<T>(id: string, data: T): Promise<T> {
+    public async updateById<T>(id: string, data: T, options?: ReplaceOptions): Promise<T> {
         this.fresh();
         const updatedDocument = {
             ...data,
@@ -140,7 +140,7 @@ export class Model {
         };
 
         try {
-            await this.collection.replace(id, updatedDocument);
+            await this.collection.replace(id, updatedDocument, options);
             return parseSchema(this.schema, updatedDocument);
         } catch (error) {
             throw error;
@@ -150,7 +150,7 @@ export class Model {
     /**
      * save
      */
-    public async save<T>(data: T & {id: string}): Promise<T> {
+    public async save<T>(data: T & {id: string}, options?: ReplaceOptions): Promise<T> {
         this.fresh();
 
         const id = data && data.id;
@@ -167,7 +167,7 @@ export class Model {
             if (!id) {
                 throw new Error('document must have id');
             }
-            await this.collection.replace(id, updatedDocument);
+            await this.collection.replace(id, updatedDocument, options);
             return parseSchema(this.schema, updatedDocument);
         } catch (error) {
             console.error(error);
@@ -175,10 +175,10 @@ export class Model {
         }
     }
 
-    public async delete(id: string): Promise<boolean> {
+    public async delete(id: string, options?: RemoveOptions): Promise<boolean> {
         this.fresh();
         try {
-            await this.collection.remove(id);
+            await this.collection.remove(id, options);
             return true;
         } catch (error) {
             throw error;
