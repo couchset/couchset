@@ -303,7 +303,7 @@ export const automateImplementation = <T>(
     });
 
     return {
-        resType: ClassResType,
+        resType: ClassResType as unknown as ResType,
         pagination: PaginationClass,
         resolver: ResolverClass,
         modelKeys,
