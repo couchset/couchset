@@ -65,6 +65,7 @@ export interface AutomaticMethodOptions {
 }
 
 export interface AutomaticOutput {
+    resType: ResType;
     pagination: ClassType;
     resolver: ClassType;
     modelKeys: string[];
@@ -108,6 +109,19 @@ export const automateImplementation = <T>(
     const authMiddleware = options.authMiddleware || isAuth;
 
     const blankMiddleware = [];
+
+    @ObjectType(`${nameCamel}ResType`)
+    class ClassResType {
+        @Field(() => Boolean)
+        success: boolean;
+
+        @Field(() => String, {nullable: true})
+        message?: string;
+
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        @Field((type) => GraphQLJSON, {nullable: true})
+        data?: any;
+    }
 
     @InputType(`${nameCamel}PaginationInput`)
     @ObjectType(`${nameCamel}Pagination`)
@@ -218,7 +232,7 @@ export const automateImplementation = <T>(
             }
         }
 
-        @Mutation(() => ResType)
+        @Mutation(() => ClassResType)
         @UseMiddleware(deleteByIdOptionsPublic ? blankMiddleware : authMiddleware)
         async [`${nameCamel}Delete`](
             @Arg('id', () => String, {nullable: false}) id: string,
@@ -246,7 +260,7 @@ export const automateImplementation = <T>(
             }
         }
 
-        @Mutation(() => ResType)
+        @Mutation(() => ClassResType)
         @UseMiddleware(createUpdateOptionsPublic ? blankMiddleware : authMiddleware)
         async [`${nameCamel}Create`](
             // @ts-ignore
@@ -289,6 +303,7 @@ export const automateImplementation = <T>(
     });
 
     return {
+        resType: ClassResType,
         pagination: PaginationClass,
         resolver: ResolverClass,
         modelKeys,
