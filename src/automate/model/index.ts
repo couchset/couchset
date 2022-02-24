@@ -127,14 +127,14 @@ export const automateImplementation = <T>(
     @ObjectType(`${nameCamel}Pagination`)
     class PaginationClass {
         @Field(() => [ClassModelType], {nullable: true})
-        items: [typeof ClassModelType];
+        items: [typeof ClassModelType] = [ClassModelType];
 
         @Field(() => Boolean, {nullable: true})
-        hasNext?: boolean;
+        hasNext?: boolean = false;
 
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         @Field((type) => GraphQLJSON, {nullable: true})
-        params?: any;
+        params?: any = {};
     }
     // return Pagination;
 
