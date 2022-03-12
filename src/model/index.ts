@@ -136,7 +136,7 @@ export class Model {
     public async updateById<T>(id: string, data: T, opt?: UpdateOptions): Promise<T> {
         this.fresh();
 
-        const {silent = false, ...options} = opt;
+        const {silent = false, ...options} = opt || {};
 
         const updatedDocument: any = {
             ...data,
@@ -165,7 +165,7 @@ export class Model {
 
         const id = data && data.id;
 
-        const {silent = false, ...options} = opt;
+        const {silent = false, ...options} = opt || {};
 
         const updatedDocument: any = {
             ...data,
