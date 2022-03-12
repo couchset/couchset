@@ -16,7 +16,11 @@ export interface AutoModelFields {
     _scope: string; // scope for collections
 }
 
-interface ModalOptions {
+export interface UpdateOptions extends ReplaceOptions {
+    silent?: boolean; // whether to updatedAt;
+}
+
+export interface ModalOptions {
     scope?: string;
     schema?: Record<string, SchemaTypes>;
     graphqlType?: any;
@@ -129,15 +133,21 @@ export class Model {
     /**
      * update
      */
-    public async updateById<T>(id: string, data: T, options?: ReplaceOptions): Promise<T> {
+    public async updateById<T>(id: string, data: T, opt?: UpdateOptions): Promise<T> {
         this.fresh();
-        const updatedDocument = {
+
+        const {silent = false, ...options} = opt;
+
+        const updatedDocument: any = {
             ...data,
             id,
-            updatedAt: new Date(),
             _type: this.collectionName, // type and scope must be defined
             _scope: this.scope,
         };
+
+        if (!silent) {
+            updatedDocument.updatedAt = new Date();
+        }
 
         try {
             await this.collection.replace(id, updatedDocument, options);
@@ -150,18 +160,23 @@ export class Model {
     /**
      * save
      */
-    public async save<T>(data: T & {id: string}, options?: ReplaceOptions): Promise<T> {
+    public async save<T>(data: T & {id: string}, opt?: UpdateOptions): Promise<T> {
         this.fresh();
 
         const id = data && data.id;
 
-        const updatedDocument = {
+        const {silent = false, ...options} = opt;
+
+        const updatedDocument: any = {
             ...data,
-            id, // id's must match
-            updatedAt: new Date(),
+            id,
             _type: this.collectionName, // type and scope must be defined
             _scope: this.scope,
         };
+
+        if (!silent) {
+            updatedDocument.updatedAt = new Date();
+        }
 
         try {
             if (!id) {
