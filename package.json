@@ -62,7 +62,7 @@
     "homepage": "https://github.com/couchset/couchset#readme",
     "devDependencies": {
         "@types/chai": "^4.2.14",
-        "@types/couchbase": "^2.4.4",
+        "@types/couchbase": "^2.4.9",
         "@types/debug": "^4.1.7",
         "@types/express": "^4.17.13",
         "@types/lodash": "^4.14.168",
@@ -96,7 +96,7 @@
         "typescript": ">=2.0"
     },
     "dependencies": {
-        "couchbase": "^3.2.4",
+        "couchbase": "^4.4.2",
         "debug": "^4.3.1",
         "dotenv": "^10.0.0",
         "graphql": "^15.6.0",

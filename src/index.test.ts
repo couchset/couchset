@@ -1,13 +1,13 @@
 import 'reflect-metadata';
 import 'mocha';
-import {expect} from 'chai';
-import {couchset, Model, QueryBuilder, Field, ObjectType} from './index';
+import { expect } from 'chai';
+import { couchset, Model, QueryBuilder, Field, ObjectType } from './index';
 
 before((done) => {
     couchset({
         connectionString: 'couchbase://localhost',
         username: 'admin',
-        password: '123456',
+        password: '1234567',
         bucketName: 'stq',
     })
         .then((started) => done())
@@ -19,7 +19,7 @@ before((done) => {
 let sampleData = null;
 
 
-const model = new Model('User', {schema: {createdAt: 'date'} });
+const model = new Model('User', { schema: { createdAt: 'date' } });
 
 describe('CouchSet', () => {
     it('should insert into couchbase', async () => {
@@ -40,27 +40,18 @@ describe('CouchSet', () => {
     });
 
     it('should update into couchbase', async () => {
-        const updatedData = await model.updateById(sampleData.id, {...sampleData, someValiue: 'x'});
+        const someValueupdate = "some update value"
+        const updatedData = await model.updateById(sampleData.id, { ...sampleData, someValue: someValueupdate });
         expect(updatedData.id).to.be.equal(sampleData.id);
+        expect(updatedData.someValue).to.be.equal(someValueupdate);
     });
 
-    it('should update into couchbase', async () => {
-        const id = 'currency';
-        const updatedData = await model.updateById(id, {...sampleData, someValiue: 'x'});
-        expect(updatedData.id).to.be.equal(id);
-    });
-
-    it('should delete into couchbase', async () => {
-        const deletedData = await model.delete(sampleData.id);
-        expect(deletedData).to.be.equal(true);
-    });
-
-    it('should paginate into couchbase', async () => {
+    it('should paginate into couchbase with select', async () => {
         const paginationData = await model.pagination({
             select: ['id', 'password', 'createdAt', 'email', 'phone', 'fullname'],
             where: {
-                userId: {$eq: 'ceddy'},
-                $or: [{userId: {$eq: 'ceddy'}}, {phone: 10}],
+                userId: { $eq: 'ceddy' },
+                $or: [{ userId: { $eq: 'ceddy' } }, { phone: 10 }],
             },
             limit: 100,
             page: 0,
@@ -74,8 +65,8 @@ describe('CouchSet', () => {
         const paginationData = await model.pagination({
             select: '*',
             where: {
-                userId: {$eq: 'ceddy'},
-                $or: [{userId: {$eq: 'ceddy'}}, {phone: 10}],
+                userId: { $eq: 'ceddy' },
+                $or: [{ userId: { $eq: 'ceddy' } }, { phone: 10 }],
             },
             limit: 100,
             page: 0,
@@ -93,5 +84,9 @@ describe('CouchSet', () => {
 
         expect(query).to.be.not.null;
     });
-    
+
+    it('should delete into couchbase', async () => {
+        const deletedData = await model.delete(sampleData.id);
+        expect(deletedData).to.be.equal(true);
+    });
 });
