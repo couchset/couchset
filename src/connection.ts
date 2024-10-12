@@ -1,7 +1,5 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 import type {Collection, Cluster, Bucket} from 'couchbase';
 
-// import * as couchbase from 'couchbase-serverless';
 import couchbase from './couchbase';
 
 export interface CouchsetArgs {
