@@ -1,7 +1,7 @@
 {
     "name": "couchset",
     "version": "0.1.0",
-    "description": "Couchbase ORM & Automatic GraphQL API(Resolver/Queries)",
+    "description": "Couchbase ORM",
     "private": false,
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
