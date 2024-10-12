@@ -1,7 +1,5 @@
 import CouchbaseConnection, {CouchsetArgs} from './connection';
 
-export * from 'type-graphql';
-export * from './automate';
 export * from './model';
 export * from './connection';
 export * from './query';

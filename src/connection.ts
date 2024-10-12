@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-import * as couchbase from 'couchbase';
-import {Collection, Cluster, Bucket} from 'couchbase';
+import type {Collection, Cluster, Bucket} from 'couchbase';
+
+import couchbase from './couchbase';
 
 export interface CouchsetArgs {
     connectionString: string;

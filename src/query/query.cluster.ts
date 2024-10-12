@@ -1,4 +1,4 @@
-import {QueryResult} from 'couchbase';
+import type {QueryResult} from 'couchbase';
 
 import CouchbaseConnection from '../connection';
 
