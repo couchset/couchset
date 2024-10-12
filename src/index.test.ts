@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import 'mocha';
 import { expect } from 'chai';
-import { couchset, Model, QueryBuilder, Field, ObjectType } from './index';
+import { couchset, Model, QueryBuilder } from './index';
 
 before((done) => {
     couchset({
