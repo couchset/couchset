@@ -1,6 +1,6 @@
-import {Collection, GetOptions, RemoveOptions, ReplaceOptions, UpsertOptions} from 'couchbase';
+import type {Collection, GetOptions, RemoveOptions, ReplaceOptions, UpsertOptions} from 'couchbase';
 
-import {AutomaticMethodOptions, AutomaticOutput, automateImplementation} from '../automate';
+// import {AutomaticMethodOptions, AutomaticOutput, automateImplementation} from '../automate';
 import {CustomQuery, CustomQueryPagination} from '../search';
 import {SchemaTypes, parseSchema} from '../utils';
 import CouchbaseConnection from '../connection';
@@ -283,15 +283,15 @@ export class Model {
         return parseSchema(this.schema, data);
     }
 
-    /**
-     *
-     * @param args AutomaticModelOptions
-     * @returns
-     */
-    public automate(args?: Partial<AutomaticMethodOptions>): AutomaticOutput {
-        this.fresh(); // refresh
-        return automateImplementation(this.graphqlType, {model: this, ...args});
-    }
+    // /**
+    //  *
+    //  * @param args AutomaticModelOptions
+    //  * @returns
+    //  */
+    // public automate(args?: Partial<AutomaticMethodOptions>): AutomaticOutput {
+    //     this.fresh(); // refresh
+    //     return automateImplementation(this.graphqlType, {model: this, ...args});
+    // }
 }
 
 export default Model;

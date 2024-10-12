@@ -1,7 +1,6 @@
 import debug from 'debug';
-import _get from 'lodash/get';
 
-const appName = _get(process.env, 'APP_NAME', 'couchset');
+const appName = process.env.APP_NAME || 'couchset';
 
 const libraryPrefix = appName;
 

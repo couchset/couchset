@@ -10,7 +10,10 @@ before((done) => {
         password: '123456',
         bucketName: 'stq',
     })
-        .then((started) => done())
+        .then((started) => {
+            console.log('couchbase started');
+            done()
+        })
         .catch((error) => {
             console.error(error);
         });

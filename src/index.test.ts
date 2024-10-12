@@ -10,13 +10,16 @@ before((done) => {
         password: '1234567',
         bucketName: 'stq',
     })
-        .then((started) => done())
+        .then((started) => {
+            console.log('couchbase started');
+            done()
+        })
         .catch((error) => {
             console.error(error);
         });
 });
 
-let sampleData = null;
+let sampleData: any = null;
 
 
 const model = new Model('User', { schema: { createdAt: 'date' } });
@@ -30,12 +33,18 @@ describe('CouchSet', () => {
 
         console.log('sample data created', JSON.stringify(created));
 
+
         sampleData = created;
         expect(created.id).to.not.null;
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
     });
 
     it('should get into couchbase', async () => {
         const foundData = await model.findById(sampleData.id);
+
+        console.log('found data', foundData);
+        console.log('sample data', sampleData);
         expect(foundData.id).to.be.equal(sampleData.id);
     });
 
