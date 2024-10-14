@@ -1,4 +1,7 @@
-import {isEmpty} from '../utils/lodash';
+import isEmpty from 'lodash/isEmpty';
+import pickBy from 'lodash/pickBy';
+import identity from 'lodash/identity';
+
 import {Model} from '../model';
 
 interface CreateUpdate {
@@ -10,7 +13,7 @@ interface CreateUpdate {
 
 export const createUpdate = async <T>(args: CreateUpdate): Promise<T | null> => {
     const {model, id} = args;
-    const data: any = args.data;
+    const data: any = pickBy(args.data, identity);
 
     try {
         if (!isEmpty(id)) {
