@@ -1,6 +1,6 @@
 {
     "name": "couchset",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "description": "Couchbase ORM",
     "private": false,
     "main": "dist/index.js",
@@ -13,7 +13,6 @@
     ],
     "scripts": {
         "lint": "tslint \"src/**/*.ts\" --project tsconfig.json",
-
         "build": "rimraf dist && ./node_modules/.bin/tsc --skipLibCheck",
         "test": "mocha src/index.test.ts --exit",
         "test:auto": "mocha src/automation.test.ts --exit",
