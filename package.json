@@ -15,6 +15,7 @@
         "lint": "tslint \"src/**/*.ts\" --project tsconfig.json",
         "build": "rimraf dist && ./node_modules/.bin/tsc --skipLibCheck",
         "test": "mocha src/index.test.ts --exit",
+        "test:serverless": "mocha src/index.serverless.test.ts --exit",
         "test:auto": "mocha src/automation.test.ts --exit",
         "prepublishOnly": "npm run build",
         "eslint": "eslint ./src --fix --ext=ts"

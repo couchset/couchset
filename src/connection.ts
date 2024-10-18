@@ -1,6 +1,5 @@
 import type {Collection, Cluster, Bucket} from 'couchbase';
-
-import couchbase from './couchbase';
+import * as couchbase from 'couchbase';
 
 export interface CouchsetArgs {
     connectionString: string;
@@ -43,6 +42,28 @@ export class CouchbaseConnection implements CouchsetArgs {
         this.password = password;
 
         const cluster = await couchbase.connect(connectionString, {
+            username,
+            password,
+        });
+
+        this.cluster = cluster as any;
+        this.bucket = this.cluster.bucket(bucketName);
+
+        return this;
+    };
+
+    /**
+     * start serverless start
+     */
+    public initServerless = (args: CouchsetArgs): CouchbaseConnection => {
+        const {connectionString, password, username, bucketName = 'default'} = args;
+
+        this.connectionString = connectionString;
+        this.bucketName = bucketName;
+        this.username = username;
+        this.password = password;
+
+        const cluster = new couchbase.Cluster(connectionString, {
             username,
             password,
         });
