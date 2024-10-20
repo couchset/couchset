@@ -6,6 +6,7 @@ export interface CouchsetArgs {
     bucketName: string;
     username: string;
     password: string;
+    proxy?: string;
 }
 
 /**
@@ -63,10 +64,16 @@ export class CouchbaseConnection implements CouchsetArgs {
         this.username = username;
         this.password = password;
 
-        const cluster = new couchbase.Cluster(connectionString, {
+        const connectionOpt = {
             username,
             password,
-        });
+        };
+
+        if (args.proxy) {
+            connectionOpt['proxy'] = args.proxy;
+        }
+
+        const cluster = new couchbase.Cluster(connectionString, connectionOpt);
 
         this.cluster = cluster as any;
         this.bucket = this.cluster.bucket(bucketName);

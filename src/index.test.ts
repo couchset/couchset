@@ -1,14 +1,21 @@
 import 'reflect-metadata';
 import 'mocha';
+import "dotenv/config";
 import { expect } from 'chai';
 import { couchset, Model, QueryBuilder } from './index';
 
+const cbURL = process.env.COUCHBASE_URL || "couchbase://localhost";
+const cbBucket = process.env.COUCHBASE_BUCKET || "dev";
+const cbUsername = process.env.COUCHBASE_USERNAME || "admin";
+const cbPw = process.env.COUCHBASE_PASSWORD || "1234";
+
+
 before((done) => {
     couchset({
-        connectionString: 'couchbase://localhost',
-        username: 'admin',
-        password: '1234567',
-        bucketName: 'stq',
+        connectionString: cbURL,
+        username: cbUsername,
+        password: cbPw,
+        bucketName: cbBucket,
     })
         .then((started) => {
             console.log('couchbase started');
