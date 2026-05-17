@@ -1,4 +1,5 @@
 import CouchbaseConnection, {CouchsetArgs} from './connection';
+import {EnsureIndexOptions, Model} from './model';
 
 export * from './model';
 export * from './connection';
@@ -16,6 +17,12 @@ export const couchset = async (args: CouchsetArgs): Promise<boolean> => {
     await couch.init(args);
     return Promise.resolve(true);
 };
+
+export const ensureIndexes = async (options?: EnsureIndexOptions): Promise<string[]> => {
+    return Model.ensureIndexes(options);
+};
+
+(couchset as any).ensureIndexes = ensureIndexes;
 
 /**
  * Main function to start CouchSet

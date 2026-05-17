@@ -48,6 +48,12 @@ import type {
     UpsertWriteOptions,
 } from './write-helpers';
 import {hydrate as hydrateDocument, Hydrated} from './hydrated-document';
+import {
+    buildIndexQuery,
+    ensureModelIndexes,
+    EnsureIndexOptions,
+    ModelIndexDefinition,
+} from './indexes';
 import {applyTtlOptions} from './ttl';
 import type {ParseHook, ValidationHook} from './validation';
 import {applyValidation, parseDateFields, schemaFromDateFields} from './validation';
@@ -62,6 +68,7 @@ export type {
 } from './safe-query';
 export type {FindByIdWithMetaResult, PatchByIdArgs} from './write-helpers';
 export type {Hydrated} from './hydrated-document';
+export type {EnsureIndexOptions, ModelIndexDefinition} from './indexes';
 export type {TtlOptions} from './ttl';
 export type {ParseHook, ValidationHook} from './validation';
 
@@ -94,6 +101,7 @@ export interface ModalOptions {
     validateReplace?: ValidationHook;
     parse?: ParseHook;
     dateFields?: string[];
+    indexes?: ModelIndexDefinition[];
 }
 
 interface CollectionTarget {
@@ -102,6 +110,8 @@ interface CollectionTarget {
 }
 
 export class Model {
+    private static registeredModels: Model[] = [];
+
     collection: Collection;
     collectionName: string;
     scope = '_default';
@@ -115,6 +125,7 @@ export class Model {
     private validateReplaceHook?: ValidationHook;
     private parseHook?: ParseHook;
     private dateFields?: string[];
+    private indexes: ModelIndexDefinition[] = [];
     schema: Record<string, SchemaTypes> = {
         createdAt: 'date',
         updatedAt: 'date',
@@ -140,6 +151,7 @@ export class Model {
             this.validateReplaceHook = options.validateReplace;
             this.parseHook = options.parse;
             this.dateFields = options.dateFields;
+            this.indexes = options.indexes || [];
             this.schema = {
                 ...((options && options.schema) || {}),
                 ...schemaFromDateFields(options.dateFields),
@@ -147,6 +159,36 @@ export class Model {
                 updatedAt: 'date',
             };
         }
+
+        if (this.indexes.length) {
+            Model.registeredModels.push(this);
+        }
+    }
+
+    /**
+     * Ensure indexes for every constructed model with index declarations.
+     */
+    public static async ensureIndexes(options?: EnsureIndexOptions): Promise<string[]> {
+        const queries: string[] = [];
+        const seenQueries = new Set<string>();
+
+        for (const model of Model.registeredModels) {
+            const statements = model.indexStatements(options);
+            const pending = statements.filter((query) => !seenQueries.has(query));
+
+            pending.forEach((query) => seenQueries.add(query));
+            await ensureModelIndexes(
+                model.couchbaseConnection().cluster,
+                model.keyspace(),
+                model.indexes.filter((index, indexPosition) =>
+                    pending.includes(statements[indexPosition])
+                ),
+                options
+            );
+            queries.push(...pending);
+        }
+
+        return queries;
     }
 
     /**
@@ -296,6 +338,27 @@ export class Model {
      */
     public from(alias?: string): string {
         return fromTarget(this.keyspace(), alias);
+    }
+
+    /**
+     * Return CREATE INDEX statements for this model without executing them.
+     */
+    public indexStatements(options?: EnsureIndexOptions): string[] {
+        return this.indexes.map((index) => buildIndexQuery(this.keyspace(), index, options));
+    }
+
+    /**
+     * Create this model's declared indexes if Couchbase does not already have them.
+     */
+    public async ensureIndexes(options?: EnsureIndexOptions): Promise<string[]> {
+        this.fresh();
+
+        return ensureModelIndexes(
+            this.couchbaseConnection().cluster,
+            this.keyspace(),
+            this.indexes,
+            options
+        );
     }
 
     /**
