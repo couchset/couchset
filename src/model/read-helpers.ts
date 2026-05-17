@@ -2,6 +2,8 @@ import type {Cluster} from 'couchbase';
 
 import {buildSelectionQuery} from '../pagination/safe-pagination';
 
+import {buildIncludedSelectionQuery, IncludeDefinition} from './include';
+
 export interface ModelReadArgs {
     select?: any[] | string;
     where?: any;
@@ -10,6 +12,7 @@ export interface ModelReadArgs {
     page?: number;
     offset?: number;
     throwOnError?: boolean;
+    include?: IncludeDefinition[];
 }
 
 export interface ModelPageInfo {
@@ -64,25 +67,42 @@ const runReadQuery = async <T>(
     args: ModelReadArgs,
     queryArgs: ModelReadArgs
 ): Promise<T[]> => {
-    const {query, parameters, selectAll} = buildSelectionQuery(
-        {
-            bucketName: context.bucketName,
-            select: queryArgs.select || '*',
-            where: {where: scopedWhere(context.collectionName, queryArgs.where)},
-            limit: queryArgs.limit,
-            page: queryArgs.page,
-            offset: queryArgs.offset,
-            orderBy: queryArgs.orderBy,
-        },
-        {includeLimitOffset: true}
-    );
+    const hasIncludes = Array.isArray(queryArgs.include) && queryArgs.include.length > 0;
+    const builtQuery = hasIncludes
+        ? buildIncludedSelectionQuery({
+              keyspace: context.bucketName,
+              collectionName: context.collectionName,
+              select: queryArgs.select || '*',
+              where: scopedWhere(context.collectionName, queryArgs.where),
+              limit: queryArgs.limit,
+              page: queryArgs.page,
+              offset: queryArgs.offset,
+              orderBy: queryArgs.orderBy,
+              include: queryArgs.include,
+          })
+        : {
+              ...buildSelectionQuery(
+                  {
+                      bucketName: context.bucketName,
+                      select: queryArgs.select || '*',
+                      where: {where: scopedWhere(context.collectionName, queryArgs.where)},
+                      limit: queryArgs.limit,
+                      page: queryArgs.page,
+                      offset: queryArgs.offset,
+                      orderBy: queryArgs.orderBy,
+                  },
+                  {includeLimitOffset: true}
+              ),
+              resultKey: undefined,
+          };
+    const {query, parameters, selectAll, resultKey} = builtQuery;
 
     try {
         const {rows = []} = await context.cluster.query(query, {parameters});
 
         return unwrapRows<T>(
             rows,
-            context.resultKey || context.bucketName,
+            resultKey || context.resultKey || context.bucketName,
             selectAll,
             context.parse
         );

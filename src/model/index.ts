@@ -68,6 +68,7 @@ export type {
 } from './safe-query';
 export type {FindByIdWithMetaResult, PatchByIdArgs} from './write-helpers';
 export type {Hydrated} from './hydrated-document';
+export type {IncludeDefinition, IncludeType} from './include';
 export type {EnsureIndexOptions, ModelIndexDefinition} from './indexes';
 export type {TtlOptions} from './ttl';
 export type {ParseHook, ValidationHook} from './validation';
