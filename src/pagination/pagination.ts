@@ -1,14 +1,7 @@
-import {QueryBuilder} from '../query';
 import CouchbaseConnection from '../connection';
 
-export interface PaginationArgs {
-    bucketName: string;
-    select?: any[] | string;
-    where: any;
-    page: number;
-    limit: number;
-    orderBy?: any;
-}
+import {buildPaginationQuery} from './safe-pagination';
+import {PaginationArgs} from './types';
 
 /**
  * Common pagination
@@ -21,40 +14,19 @@ export interface PaginationArgs {
  * @param args PaginationArgs
  */
 export const Pagination = async (args: PaginationArgs): Promise<any[]> => {
-    const {
-        bucketName = '_default',
-        // select: ogSelected = '*',
-        where = {
-            // where: {owner: {$eq: 'stoqey'}, _type: {$eq: 'Trade'}},
-        },
-        page = 0,
-        limit = 10,
-        orderBy = {createdAt: 'DESC'},
-    } = args;
+    const {bucketName = '_default'} = args;
 
     const cluster = CouchbaseConnection.Instance.cluster;
 
-    let select = args.select || '*';
-    if (Array.isArray(select)) {
-        select = select.map((i) => ({$field: i}));
-    }
-
-    const offset = page * limit;
-
     try {
-        const query = new QueryBuilder(where, bucketName)
-            .select(select)
-            .limit(limit)
-            .offset(offset)
-            .orderBy(orderBy)
-            .build();
+        const {query, parameters, selectAll} = buildPaginationQuery(args);
 
         console.log('query', query);
 
-        const {rows} = await cluster.query(query);
+        const {rows} = await cluster.query(query, {parameters});
 
         const completedRows = rows.map((r: any) => {
-            return select === '*' ? r[bucketName] : r;
+            return selectAll ? r[bucketName] : r;
         });
 
         return completedRows;
