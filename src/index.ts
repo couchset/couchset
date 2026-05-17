@@ -7,6 +7,7 @@ export * from './query';
 export * from './search';
 export * from './pagination';
 export * from './shared';
+export * from './timeseries';
 
 /**
  * Main function to start CouchSet
