@@ -1,4 +1,12 @@
-import type {Collection, GetOptions, RemoveOptions, ReplaceOptions, UpsertOptions} from 'couchbase';
+import type {
+    Collection,
+    GetOptions,
+    InsertOptions,
+    MutateInOptions,
+    RemoveOptions,
+    ReplaceOptions,
+    UpsertOptions,
+} from 'couchbase';
 
 // import {AutomaticMethodOptions, AutomaticOutput, automateImplementation} from '../automate';
 import {CustomQuery, CustomQueryPagination} from '../search';
@@ -24,6 +32,16 @@ import type {
     QueryParameters,
     SafeQueryOptions,
 } from './safe-query';
+import {
+    findByIdWithMeta as findByIdWithMetaDoc,
+    incrementById as incrementDocumentById,
+    insert as insertDocument,
+    mutateById as mutateDocumentById,
+    patchById as patchDocumentById,
+    replaceById as replaceDocumentById,
+    upsert as upsertDocument,
+} from './write-helpers';
+import type {FindByIdWithMetaResult, ModelWriteContext, PatchByIdArgs} from './write-helpers';
 
 export type {ModelPageResult, ModelReadArgs} from './read-helpers';
 export type {
@@ -33,6 +51,7 @@ export type {
     QueryParameters,
     SafeQueryOptions,
 } from './safe-query';
+export type {FindByIdWithMetaResult, PatchByIdArgs} from './write-helpers';
 
 export interface AutoModelFields {
     id: string;
@@ -166,6 +185,15 @@ export class Model {
         };
     }
 
+    private writeContext(): ModelWriteContext {
+        return {
+            collection: this.getCollection(),
+            collectionName: this.collectionName,
+            scope: this.scope,
+            parse: <T>(data: T) => parseSchema(this.schema, data),
+        };
+    }
+
     /**
      * Return the active bucket as a SQL++ keyspace identifier.
      */
@@ -290,6 +318,22 @@ export class Model {
     }
 
     /**
+     * Insert a new document and fail if the id already exists.
+     */
+    public async insert<T>(data: T, options?: InsertOptions): Promise<T & AutoModelFields> {
+        this.fresh();
+        return insertDocument<T>(this.writeContext(), data, options);
+    }
+
+    /**
+     * Explicit insert-or-replace write.
+     */
+    public async upsert<T>(data: T, options?: UpsertOptions): Promise<T & AutoModelFields> {
+        this.fresh();
+        return upsertDocument<T>(this.writeContext(), data, options);
+    }
+
+    /**
      * findById
      */
     public async findById(id: string, options?: GetOptions): Promise<any & AutoModelFields> {
@@ -300,6 +344,17 @@ export class Model {
         } catch (error) {
             throw error;
         }
+    }
+
+    /**
+     * Find a document with SDK metadata.
+     */
+    public async findByIdWithMeta<T>(
+        id: string,
+        options?: GetOptions
+    ): Promise<FindByIdWithMetaResult<T>> {
+        this.fresh();
+        return findByIdWithMetaDoc<T>(this.writeContext(), id, options);
     }
 
     /**
@@ -327,6 +382,51 @@ export class Model {
         } catch (error) {
             throw error;
         }
+    }
+
+    /**
+     * Explicit full-document replace.
+     */
+    public async replaceById<T>(
+        id: string,
+        data: T,
+        options?: UpdateOptions
+    ): Promise<T & AutoModelFields> {
+        this.fresh();
+        return replaceDocumentById<T>(this.writeContext(), id, data, options);
+    }
+
+    /**
+     * Partial document mutation using common patch operators.
+     */
+    public async patchById<T>(
+        id: string,
+        patch: PatchByIdArgs,
+        options?: MutateInOptions
+    ): Promise<T & AutoModelFields> {
+        this.fresh();
+        return patchDocumentById<T>(this.writeContext(), id, patch, options);
+    }
+
+    /**
+     * Couchbase subdocument mutation escape hatch.
+     */
+    public async mutateById(id: string, specs: any[], options?: MutateInOptions): Promise<any> {
+        this.fresh();
+        return mutateDocumentById(this.writeContext(), id, specs, options);
+    }
+
+    /**
+     * Atomic numeric field increment.
+     */
+    public async incrementById<T>(
+        id: string,
+        field: string,
+        delta: number,
+        options?: MutateInOptions
+    ): Promise<T & AutoModelFields> {
+        this.fresh();
+        return incrementDocumentById<T>(this.writeContext(), id, field, delta, options);
     }
 
     /**
