@@ -214,7 +214,7 @@ Goal: remove repeated `deleted IS MISSING` boilerplate.
 Add model options:
 
 ```ts
-const SandboxModel = new Model<Sandbox>("app-sandbox", {
+const SandboxModel = new Model<Sandbox>("Sandbox", {
   softDelete: true,
   defaultWhere: { deleted: { $isMissing: true } },
 });
@@ -401,6 +401,412 @@ Requirements:
 - Preserve current singleton ergonomics.
 - If connection settings change, either close/reconnect with `force: true` or throw a clear error.
 - Reassess whether the serverless package is still needed with current Couchbase SDK versions.
+
+## SQL++ Query Examples
+
+These examples are intentionally generic and should be used as implementation/test fixtures. SQL++ is the Couchbase query language formerly called N1QL.
+
+Reference docs:
+
+- SQL++ basics and keyspace paths: https://docs.couchbase.com/server/current/getting-started/try-a-query.html
+- Node SDK query placeholders: https://docs.couchbase.com/nodejs-sdk/4.4/howtos/n1ql-queries-with-sdk.html
+- Index creation: https://docs.couchbase.com/server/7.2/guides/create-index.html
+- JOIN syntax: https://docs.couchbase.com/server/7.6/n1ql/n1ql-language-reference/join.html
+- NEST/UNNEST syntax: https://docs.couchbase.com/server/7.6/guides/nest-unnest.html
+- Pattern matching functions: https://docs.couchbase.com/server/7.6/n1ql/n1ql-language-reference/patternmatchingfun.html
+- `_TIMESERIES` function: https://docs.couchbase.com/server/7.2/n1ql/n1ql-language-reference/timeseries.html
+
+### Keyspace Formatting
+
+Default bucket/default collection:
+
+```sql
+SELECT doc.*
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+LIMIT $limit;
+```
+
+Fully qualified collection path:
+
+```sql
+SELECT doc.*
+FROM default:`bucket-name`.scopeName.collectionName AS doc
+WHERE doc.status = $status
+LIMIT $limit;
+```
+
+Implementation note:
+
+- If a bucket, scope, or collection name contains a hyphen or reserved word, wrap that part in backticks.
+- For default collection legacy models, `FROM \`bucketName\`` is valid and should remain the default.
+- For scoped/collection models, the helper should return a full keyspace path unless a query context is explicitly used.
+
+Suggested helper behavior:
+
+```ts
+LegacyModel.keyspace(); // `bucketName`
+ScopedModel.keyspace(); // default:`bucketName`.`scopeName`.`collectionName` or equivalent escaped path
+UserModel.from("user"); // `${UserModel.keyspace()} AS user`
+```
+
+### Named And Positional Parameters
+
+Named parameters:
+
+```ts
+const query = `
+  SELECT user.*
+  FROM ${UserModel.from("user")}
+  WHERE user._type = $type
+    AND (user.email = $login OR user.username = $login)
+  LIMIT $limit
+`;
+
+const { rows } = await cluster.query(query, {
+  parameters: {
+    type: "User",
+    login,
+    limit: 1,
+  },
+});
+```
+
+Positional parameters:
+
+```ts
+const query = `
+  SELECT user.*
+  FROM ${UserModel.from("user")}
+  WHERE user._type = $1
+    AND user.owner = $2
+  LIMIT $3
+`;
+
+const { rows } = await cluster.query(query, {
+  parameters: ["UserDevice", owner, 100],
+});
+```
+
+### Find One
+
+```sql
+SELECT raw doc
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+  AND doc.id = $id
+  AND doc.deleted IS MISSING
+LIMIT 1;
+```
+
+Model API target:
+
+```ts
+await Model.findOne({
+  where: { id, deleted: { $isMissing: true } },
+});
+```
+
+### Exists
+
+```sql
+SELECT RAW COUNT(1) > 0
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+  AND doc.owner = $owner
+LIMIT 1;
+```
+
+Alternative, often enough:
+
+```sql
+SELECT RAW 1
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+  AND doc.owner = $owner
+LIMIT 1;
+```
+
+Model API target:
+
+```ts
+await Model.exists({ where: { owner } });
+```
+
+### Count
+
+```sql
+SELECT RAW COUNT(1)
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+  AND doc.workspaceId = $workspaceId
+  AND doc.deleted IS MISSING;
+```
+
+Model API target:
+
+```ts
+await Model.count({
+  where: {
+    workspaceId,
+    deleted: { $isMissing: true },
+  },
+});
+```
+
+### Soft-Delete-Aware Listing
+
+```sql
+SELECT doc.id, doc.name, doc.status, doc.createdAt, doc.updatedAt
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+  AND doc.deleted IS MISSING
+  AND ($workspaceId IS NULL OR doc.workspaceId = $workspaceId)
+  AND ($status IS NULL OR doc.status = $status)
+ORDER BY doc.createdAt DESC, doc.id DESC
+LIMIT $limit
+OFFSET $offset;
+```
+
+Implementation note:
+
+- The builder may choose to omit optional predicates instead of using nullable parameters.
+- Either approach is acceptable as long as user values are passed as query parameters, not interpolated into the SQL++ string.
+
+### Keyset/Cursor Page
+
+```sql
+SELECT doc.*
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+  AND doc.owner = $owner
+  AND doc.updatedAt <= $before
+ORDER BY doc.updatedAt DESC, doc.id DESC
+LIMIT $limitPlusOne;
+```
+
+Implementation note:
+
+- `queryPage()` should accept `limit`.
+- It should execute with `limitPlusOne = limit + 1`.
+- It should trim the extra row and set `hasNext`.
+
+### Case-Insensitive Search
+
+Useful for public user/contact-style search fields. Prefer parameters over interpolated regular expressions.
+
+```sql
+SELECT doc.id, doc.username, doc.fullname, doc.firstname, doc.lastname, doc.avatar
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+  AND (
+    REGEXP_CONTAINS(LOWER(doc.firstname), $pattern)
+    OR REGEXP_CONTAINS(LOWER(doc.lastname), $pattern)
+    OR REGEXP_CONTAINS(LOWER(doc.fullname), $pattern)
+    OR REGEXP_CONTAINS(LOWER(doc.phone), $pattern)
+  )
+LIMIT $limit;
+```
+
+Parameters:
+
+```ts
+{
+  type: "User",
+  pattern: `${search.toLowerCase()}.*`,
+  limit,
+}
+```
+
+Implementation note:
+
+- Regex search may need dedicated indexes or a future FTS helper for large datasets.
+- The immediate task is parameter safety and consistent row parsing, not full-text relevance ranking.
+
+### JOIN ON KEYS
+
+Useful for Roadman-style chat documents where a conversation stores document keys for owner/source/last message.
+
+```sql
+SELECT convo, owner, lastMessage, source
+FROM `bucketName` AS convo
+JOIN `bucketName` AS owner
+  ON KEYS convo.owner
+LEFT JOIN `bucketName` AS lastMessage
+  ON KEYS convo.lastMessage
+LEFT JOIN `bucketName` AS source
+  ON KEYS convo.sourceId
+WHERE convo._type = $convoType
+  AND convo.owner = $owner
+  AND convo.updatedAt <= $before
+ORDER BY convo.updatedAt DESC
+LIMIT $limitPlusOne;
+```
+
+Model include target:
+
+```ts
+await ChatConvoModel.findMany({
+  where: { owner, updatedAt: { $lte: before } },
+  include: [
+    { as: "owner", key: "owner", join: "inner" },
+    { as: "lastMessage", key: "lastMessage", join: "left" },
+    { as: "source", key: "sourceId", join: "left" },
+  ],
+});
+```
+
+### NEST ON KEYS
+
+Useful when the parent document stores an array of document keys.
+
+```sql
+SELECT convo, members
+FROM `bucketName` AS convo
+NEST `bucketName` AS members
+  ON KEYS convo.members
+WHERE convo._type = $convoType
+  AND convo.id = $id
+LIMIT 1;
+```
+
+Model include target:
+
+```ts
+await ChatConvoModel.findOne({
+  where: { id },
+  include: [{ as: "members", keys: "members", type: "nest" }],
+});
+```
+
+### Array Predicate
+
+Useful for checking whether an array contains a member id.
+
+```sql
+SELECT convo.*
+FROM `bucketName` AS convo
+WHERE convo._type = $convoType
+  AND ANY memberId IN convo.members SATISFIES memberId = $memberId END
+LIMIT $limit;
+```
+
+### Time-Series Range
+
+Generic form for chunked documents with `ts_data`, `ts_start`, and `ts_end`.
+
+```sql
+WITH range_start AS ($startMs),
+     range_end AS ($endMs)
+SELECT t._t AS date,
+       t._v0 AS close,
+       t._v1 AS high,
+       t._v2 AS low,
+       t._v3 AS open,
+       t._v4 AS volume
+FROM `bucketName` AS d
+UNNEST _timeseries(d, {"ts_ranges": [range_start, range_end]}) AS t
+WHERE d._type = $type
+  AND d.ticker = $ticker
+  AND d.ts_start <= range_end
+  AND d.ts_end >= range_start
+ORDER BY t._t ASC;
+```
+
+Aggregated interval form:
+
+```sql
+WITH range_start AS ($startMs),
+     range_end AS ($endMs)
+SELECT IDIV(t._t, $intervalMs) AS bucket,
+       AVG(t._v0) AS close,
+       MAX(t._v1) AS high,
+       MIN(t._v2) AS low,
+       AVG(t._v3) AS open,
+       SUM(t._v4) AS volume
+FROM `bucketName` AS d
+UNNEST _timeseries(d, {"ts_ranges": [range_start, range_end]}) AS t
+WHERE d._type = $type
+  AND d.ticker = $ticker
+  AND d.ts_start <= range_end
+  AND d.ts_end >= range_start
+GROUP BY IDIV(t._t, $intervalMs)
+ORDER BY bucket ASC;
+```
+
+Implementation note:
+
+- Keep the range predicates in both `_timeseries(... ts_ranges ...)` and `WHERE`; Couchbase docs call this out as useful for pushing date range predicates to index scans.
+
+### Indexes
+
+Basic model discriminator and created date index:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_type_createdAt
+ON `bucketName`(_type, createdAt DESC);
+```
+
+Soft-delete/list index:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_type_workspace_deleted_createdAt
+ON `bucketName`(_type, workspaceId, deleted, createdAt DESC);
+```
+
+Partial index:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_active_by_workspace
+ON `bucketName`(workspaceId, status, createdAt DESC)
+WHERE _type = "Sandbox" AND deleted IS MISSING;
+```
+
+Document-key metadata index:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_doc_id
+ON `bucketName`(META().id);
+```
+
+Array index:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_convo_members
+ON `bucketName`(DISTINCT ARRAY memberId FOR memberId IN members END)
+WHERE _type = "ChatConvo";
+```
+
+Deferred build:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_deferred_example
+ON `bucketName`(_type, owner, updatedAt DESC)
+WITH {"defer_build": true};
+```
+
+Implementation note:
+
+- Avoid recommending primary indexes for app queries. Generate specific secondary indexes from model definitions.
+- Use scoped keyspace paths for scoped models.
+
+### CAS In SQL++ Results
+
+Useful when mixing SQL++ reads with KV updates.
+
+```sql
+SELECT META(doc).id AS id,
+       TOSTRING(META(doc).cas) AS cas,
+       doc.*
+FROM `bucketName` AS doc
+WHERE doc._type = $type
+  AND doc.id = $id
+LIMIT 1;
+```
+
+Implementation note:
+
+- JavaScript cannot safely represent Couchbase CAS as a normal number; use string conversion for SQL++ results and SDK CAS objects for KV operations.
 
 ## Public Export Cleanup
 
