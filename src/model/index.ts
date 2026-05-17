@@ -15,6 +15,7 @@ import CouchbaseConnection from '../connection';
 import {Pagination} from '../pagination';
 import {generateUUID} from '../uuid';
 
+import {applyDefaultWhere, DefaultWhereMode} from './default-scope';
 import {
     count as countRows,
     exists as rowsExist,
@@ -66,11 +67,17 @@ export interface UpdateOptions extends ReplaceOptions {
     silent?: boolean; // whether to updatedAt;
 }
 
+export interface DeleteByIdOptions extends RemoveOptions {
+    hard?: boolean;
+}
+
 export interface ModalOptions {
     scope?: string;
     collection?: string;
     schema?: Record<string, SchemaTypes>;
     graphqlType?: any;
+    softDelete?: boolean;
+    defaultWhere?: any;
 }
 
 interface CollectionTarget {
@@ -84,6 +91,9 @@ export class Model {
     scope = '_default';
     private scopeName?: string;
     private collectionTargetName?: string;
+    private defaultWhere?: any;
+    private defaultWhereMode: DefaultWhereMode = 'default';
+    private softDelete = false;
     schema: Record<string, SchemaTypes> = {
         createdAt: 'date',
         updatedAt: 'date',
@@ -102,6 +112,8 @@ export class Model {
             this.collectionTargetName = hasCollection
                 ? options.collection || '_default'
                 : undefined;
+            this.softDelete = !!options.softDelete;
+            this.defaultWhere = options.defaultWhere;
             this.schema = {
                 ...((options && options.schema) || {}),
                 createdAt: 'date',
@@ -185,6 +197,14 @@ export class Model {
         };
     }
 
+    private readArgs(args: ModelReadArgs = {}): ModelReadArgs {
+        return applyDefaultWhere(args, {
+            defaultWhere: this.defaultWhere,
+            mode: this.defaultWhereMode,
+            softDelete: this.softDelete,
+        });
+    }
+
     private writeContext(): ModelWriteContext {
         return {
             collection: this.getCollection(),
@@ -192,6 +212,28 @@ export class Model {
             scope: this.scope,
             parse: <T>(data: T) => parseSchema(this.schema, data),
         };
+    }
+
+    private cloneWithDefaultWhereMode(mode: DefaultWhereMode): Model {
+        const options: ModalOptions = {
+            defaultWhere: this.defaultWhere,
+            graphqlType: this.graphqlType,
+            schema: this.schema,
+            softDelete: this.softDelete,
+        };
+
+        if (this.scopeName) {
+            options.scope = this.scopeName;
+        }
+
+        if (this.collectionTargetName) {
+            options.collection = this.collectionTargetName;
+        }
+
+        const model = new Model(this.collectionName, options);
+        model.defaultWhereMode = mode;
+
+        return model;
     }
 
     /**
@@ -259,7 +301,7 @@ export class Model {
      */
     public async findMany<T>(args: ModelReadArgs = {}): Promise<T[]> {
         this.fresh();
-        return findManyRows<T>(this.readContext(), args);
+        return findManyRows<T>(this.readContext(), this.readArgs(args));
     }
 
     /**
@@ -267,7 +309,7 @@ export class Model {
      */
     public async findOne<T>(args: ModelReadArgs = {}): Promise<T | null> {
         this.fresh();
-        return findOneRow<T>(this.readContext(), args);
+        return findOneRow<T>(this.readContext(), this.readArgs(args));
     }
 
     /**
@@ -275,7 +317,7 @@ export class Model {
      */
     public async exists(args: ModelReadArgs = {}): Promise<boolean> {
         this.fresh();
-        return rowsExist(this.readContext(), args);
+        return rowsExist(this.readContext(), this.readArgs(args));
     }
 
     /**
@@ -283,7 +325,7 @@ export class Model {
      */
     public async count(args: ModelReadArgs = {}): Promise<number> {
         this.fresh();
-        return countRows(this.readContext(), args);
+        return countRows(this.readContext(), this.readArgs(args));
     }
 
     /**
@@ -291,7 +333,19 @@ export class Model {
      */
     public async page<T>(args: ModelReadArgs = {}): Promise<ModelPageResult<T>> {
         this.fresh();
-        return pageRows<T>(this.readContext(), args);
+        return pageRows<T>(this.readContext(), this.readArgs(args));
+    }
+
+    public withDeleted(): Model {
+        return this.cloneWithDefaultWhereMode('withDeleted');
+    }
+
+    public onlyDeleted(): Model {
+        return this.cloneWithDefaultWhereMode('onlyDeleted');
+    }
+
+    public withoutDefaultWhere(): Model {
+        return this.cloneWithDefaultWhereMode('none');
     }
 
     /**
@@ -427,6 +481,35 @@ export class Model {
     ): Promise<T & AutoModelFields> {
         this.fresh();
         return incrementDocumentById<T>(this.writeContext(), id, field, delta, options);
+    }
+
+    public async softDeleteById<T>(
+        id: string,
+        options?: MutateInOptions
+    ): Promise<T & AutoModelFields> {
+        this.fresh();
+        return this.patchById<T>(id, {$set: {deleted: true, deletedAt: new Date()}}, options);
+    }
+
+    public async restoreById<T>(
+        id: string,
+        options?: MutateInOptions
+    ): Promise<T & AutoModelFields> {
+        this.fresh();
+        return this.patchById<T>(id, {$unset: ['deleted', 'deletedAt']}, options);
+    }
+
+    public async deleteById<T>(
+        id: string,
+        options?: DeleteByIdOptions
+    ): Promise<boolean | (T & AutoModelFields)> {
+        const {hard = false, ...removeOptions} = options || {};
+
+        if (hard || !this.softDelete) {
+            return this.delete(id, removeOptions);
+        }
+
+        return this.softDeleteById<T>(id);
     }
 
     /**
