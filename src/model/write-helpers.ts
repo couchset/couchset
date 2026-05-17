@@ -10,6 +10,8 @@ import type {
 import couchbase from '../couchbase';
 import {generateUUID} from '../uuid';
 
+import {applyValidation, ValidationHook} from './validation';
+
 import type {AutoModelFields, UpdateOptions} from './index';
 
 export interface ModelWriteContext {
@@ -17,6 +19,9 @@ export interface ModelWriteContext {
     collectionName: string;
     scope: string;
     parse: <T>(data: T) => T;
+    validateCreate?: ValidationHook;
+    validateUpdate?: ValidationHook;
+    validateReplace?: ValidationHook;
 }
 
 export interface PatchByIdArgs {
@@ -85,10 +90,11 @@ export const insert = async <T>(
     options?: InsertOptions
 ): Promise<T & AutoModelFields> => {
     const document = modelDocument<T>(context, data);
+    const validated = await applyValidation(document, context.validateCreate);
 
-    await context.collection.insert(document.id, document, options);
+    await context.collection.insert(validated.id, validated, options);
 
-    return context.parse<T & AutoModelFields>(document);
+    return context.parse<T & AutoModelFields>(validated);
 };
 
 export const upsert = async <T>(
@@ -97,10 +103,11 @@ export const upsert = async <T>(
     options?: UpsertOptions
 ): Promise<T & AutoModelFields> => {
     const document = modelDocument<T>(context, data);
+    const validated = await applyValidation(document, context.validateCreate);
 
-    await context.collection.upsert(document.id, document, options);
+    await context.collection.upsert(validated.id, validated, options);
 
-    return context.parse<T & AutoModelFields>(document);
+    return context.parse<T & AutoModelFields>(validated);
 };
 
 export const replaceById = async <T>(
@@ -111,10 +118,11 @@ export const replaceById = async <T>(
 ): Promise<T & AutoModelFields> => {
     const {silent, ...replaceOptions} = options || {};
     const document = replacementDocument<T>(context, id, data, {silent});
+    const validated = await applyValidation(document, context.validateReplace);
 
-    await context.collection.replace(id, document, replaceOptions as ReplaceOptions);
+    await context.collection.replace(id, validated, replaceOptions as ReplaceOptions);
 
-    return context.parse<T & AutoModelFields>(document);
+    return context.parse<T & AutoModelFields>(validated);
 };
 
 export const mutateById = async (

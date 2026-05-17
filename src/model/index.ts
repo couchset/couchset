@@ -43,6 +43,9 @@ import {
     upsert as upsertDocument,
 } from './write-helpers';
 import type {FindByIdWithMetaResult, ModelWriteContext, PatchByIdArgs} from './write-helpers';
+import {hydrate as hydrateDocument, Hydrated} from './hydrated-document';
+import type {ParseHook, ValidationHook} from './validation';
+import {applyValidation, parseDateFields, schemaFromDateFields} from './validation';
 
 export type {ModelPageResult, ModelReadArgs} from './read-helpers';
 export type {
@@ -53,6 +56,8 @@ export type {
     SafeQueryOptions,
 } from './safe-query';
 export type {FindByIdWithMetaResult, PatchByIdArgs} from './write-helpers';
+export type {Hydrated} from './hydrated-document';
+export type {ParseHook, ValidationHook} from './validation';
 
 export interface AutoModelFields {
     id: string;
@@ -78,6 +83,11 @@ export interface ModalOptions {
     graphqlType?: any;
     softDelete?: boolean;
     defaultWhere?: any;
+    validateCreate?: ValidationHook;
+    validateUpdate?: ValidationHook;
+    validateReplace?: ValidationHook;
+    parse?: ParseHook;
+    dateFields?: string[];
 }
 
 interface CollectionTarget {
@@ -94,6 +104,11 @@ export class Model {
     private defaultWhere?: any;
     private defaultWhereMode: DefaultWhereMode = 'default';
     private softDelete = false;
+    private validateCreateHook?: ValidationHook;
+    private validateUpdateHook?: ValidationHook;
+    private validateReplaceHook?: ValidationHook;
+    private parseHook?: ParseHook;
+    private dateFields?: string[];
     schema: Record<string, SchemaTypes> = {
         createdAt: 'date',
         updatedAt: 'date',
@@ -114,8 +129,14 @@ export class Model {
                 : undefined;
             this.softDelete = !!options.softDelete;
             this.defaultWhere = options.defaultWhere;
+            this.validateCreateHook = options.validateCreate;
+            this.validateUpdateHook = options.validateUpdate;
+            this.validateReplaceHook = options.validateReplace;
+            this.parseHook = options.parse;
+            this.dateFields = options.dateFields;
             this.schema = {
                 ...((options && options.schema) || {}),
+                ...schemaFromDateFields(options.dateFields),
                 createdAt: 'date',
                 updatedAt: 'date',
             };
@@ -192,7 +213,7 @@ export class Model {
             bucketName: this.keyspace(),
             collectionName: this.collectionName,
             cluster: this.couchbaseConnection().cluster,
-            parse: <T>(data: T) => parseSchema(this.schema, data),
+            parse: <T>(data: T) => this.parse(data),
             resultKey: this.queryResultKey(),
         };
     }
@@ -210,16 +231,24 @@ export class Model {
             collection: this.getCollection(),
             collectionName: this.collectionName,
             scope: this.scope,
-            parse: <T>(data: T) => parseSchema(this.schema, data),
+            parse: <T>(data: T) => this.parse(data),
+            validateCreate: this.validateCreateHook,
+            validateReplace: this.validateReplaceHook,
+            validateUpdate: this.validateUpdateHook,
         };
     }
 
     private cloneWithDefaultWhereMode(mode: DefaultWhereMode): Model {
         const options: ModalOptions = {
+            dateFields: this.dateFields,
             defaultWhere: this.defaultWhere,
             graphqlType: this.graphqlType,
+            parse: this.parseHook,
             schema: this.schema,
             softDelete: this.softDelete,
+            validateCreate: this.validateCreateHook,
+            validateReplace: this.validateReplaceHook,
+            validateUpdate: this.validateUpdateHook,
         };
 
         if (this.scopeName) {
@@ -364,8 +393,9 @@ export class Model {
         };
 
         try {
-            await this.collection.upsert(createdData.id, createdData, options);
-            return parseSchema(this.schema, createdData);
+            const validated = await applyValidation(createdData, this.validateCreateHook);
+            await this.collection.upsert(validated.id, validated, options);
+            return this.parse(validated);
         } catch (error) {
             throw error;
         }
@@ -394,10 +424,19 @@ export class Model {
         this.fresh();
         try {
             const data = await this.collection.get(id, options);
-            return parseSchema(this.schema, data.content);
+            return this.parse(data.content);
         } catch (error) {
             throw error;
         }
+    }
+
+    public async findDocById<T extends {id: string}>(
+        id: string,
+        options?: GetOptions
+    ): Promise<Hydrated<T>> {
+        const data = await this.findById(id, options);
+
+        return this.hydrate<T>(data);
     }
 
     /**
@@ -431,8 +470,9 @@ export class Model {
         }
 
         try {
-            await this.collection.replace(id, updatedDocument, options);
-            return parseSchema(this.schema, updatedDocument);
+            const validated = await applyValidation(updatedDocument, this.validateUpdateHook);
+            await this.collection.replace(id, validated, options);
+            return this.parse(validated);
         } catch (error) {
             throw error;
         }
@@ -537,8 +577,9 @@ export class Model {
             if (!id) {
                 throw new Error('document must have id');
             }
-            await this.collection.replace(id, updatedDocument, options);
-            return parseSchema(this.schema, updatedDocument);
+            const validated = await applyValidation(updatedDocument, this.validateUpdateHook);
+            await this.collection.replace(id, validated, options);
+            return this.parse(validated);
         } catch (error) {
             console.error(error);
             throw error;
@@ -603,7 +644,7 @@ export class Model {
             orderBy,
         });
 
-        return rows.map((r) => parseSchema(this.schema, r));
+        return rows.map((r) => this.parse(r));
     }
 
     /**
@@ -638,9 +679,24 @@ export class Model {
         return response;
     }
 
+    public async findDocOne<T extends {id: string}>(
+        args: ModelReadArgs = {}
+    ): Promise<Hydrated<T> | null> {
+        const data = await this.findOne<T>(args);
+
+        return data ? this.hydrate<T>(data as T & AutoModelFields) : null;
+    }
+
+    public hydrate<T extends {id: string}>(data: T & AutoModelFields): Hydrated<T> {
+        return hydrateDocument<T>(this as any, this.parse(data));
+    }
+
     public parse<T>(data: T): T {
         this.fresh(); // refresh
-        return parseSchema(this.schema, data);
+        const parsed = parseSchema(this.schema, data);
+        const parsedDates = parseDateFields(parsed, this.dateFields);
+
+        return this.parseHook ? this.parseHook(parsedDates) : parsedDates;
     }
 
     // /**
