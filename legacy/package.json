@@ -1,0 +1,4 @@
+{
+    "main": "../dist/legacy/index.js",
+    "types": "../dist/legacy/index.d.ts"
+}

@@ -8,6 +8,7 @@
     "files": [
         "docs/",
         "dist/",
+        "legacy/",
         "register/",
         "LICENSE"
     ],
