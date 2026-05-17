@@ -10,6 +10,7 @@ import type {
 import couchbase from '../couchbase';
 import {generateUUID} from '../uuid';
 
+import {applyTtlOptions, TtlOptions} from './ttl';
 import {applyValidation, ValidationHook} from './validation';
 
 import type {AutoModelFields, UpdateOptions} from './index';
@@ -35,6 +36,9 @@ export interface FindByIdWithMetaResult<T> {
     cas: any;
     expiryTime?: any;
 }
+
+export type InsertWriteOptions = InsertOptions & TtlOptions;
+export type UpsertWriteOptions = UpsertOptions & TtlOptions;
 
 const now = (): Date => new Date();
 
@@ -87,12 +91,12 @@ const unsetPaths = (value?: string[] | Record<string, any>): string[] => {
 export const insert = async <T>(
     context: ModelWriteContext,
     data: T,
-    options?: InsertOptions
+    options?: InsertWriteOptions
 ): Promise<T & AutoModelFields> => {
     const document = modelDocument<T>(context, data);
     const validated = await applyValidation(document, context.validateCreate);
 
-    await context.collection.insert(validated.id, validated, options);
+    await context.collection.insert(validated.id, validated, applyTtlOptions(options));
 
     return context.parse<T & AutoModelFields>(validated);
 };
@@ -100,12 +104,12 @@ export const insert = async <T>(
 export const upsert = async <T>(
     context: ModelWriteContext,
     data: T,
-    options?: UpsertOptions
+    options?: UpsertWriteOptions
 ): Promise<T & AutoModelFields> => {
     const document = modelDocument<T>(context, data);
     const validated = await applyValidation(document, context.validateCreate);
 
-    await context.collection.upsert(validated.id, validated, options);
+    await context.collection.upsert(validated.id, validated, applyTtlOptions(options));
 
     return context.parse<T & AutoModelFields>(validated);
 };

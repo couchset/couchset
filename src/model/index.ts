@@ -1,11 +1,9 @@
 import type {
     Collection,
     GetOptions,
-    InsertOptions,
     MutateInOptions,
     RemoveOptions,
     ReplaceOptions,
-    UpsertOptions,
 } from 'couchbase';
 
 // import {AutomaticMethodOptions, AutomaticOutput, automateImplementation} from '../automate';
@@ -42,8 +40,15 @@ import {
     replaceById as replaceDocumentById,
     upsert as upsertDocument,
 } from './write-helpers';
-import type {FindByIdWithMetaResult, ModelWriteContext, PatchByIdArgs} from './write-helpers';
+import type {
+    FindByIdWithMetaResult,
+    InsertWriteOptions,
+    ModelWriteContext,
+    PatchByIdArgs,
+    UpsertWriteOptions,
+} from './write-helpers';
 import {hydrate as hydrateDocument, Hydrated} from './hydrated-document';
+import {applyTtlOptions} from './ttl';
 import type {ParseHook, ValidationHook} from './validation';
 import {applyValidation, parseDateFields, schemaFromDateFields} from './validation';
 
@@ -57,6 +62,7 @@ export type {
 } from './safe-query';
 export type {FindByIdWithMetaResult, PatchByIdArgs} from './write-helpers';
 export type {Hydrated} from './hydrated-document';
+export type {TtlOptions} from './ttl';
 export type {ParseHook, ValidationHook} from './validation';
 
 export interface AutoModelFields {
@@ -380,7 +386,7 @@ export class Model {
     /**
      * create
      */
-    public async create<T>(data: T, options?: UpsertOptions): Promise<T & AutoModelFields> {
+    public async create<T>(data: T, options?: UpsertWriteOptions): Promise<T & AutoModelFields> {
         this.fresh();
         const id = generateUUID();
         const createdData = {
@@ -394,7 +400,7 @@ export class Model {
 
         try {
             const validated = await applyValidation(createdData, this.validateCreateHook);
-            await this.collection.upsert(validated.id, validated, options);
+            await this.collection.upsert(validated.id, validated, applyTtlOptions(options));
             return this.parse(validated);
         } catch (error) {
             throw error;
@@ -404,7 +410,7 @@ export class Model {
     /**
      * Insert a new document and fail if the id already exists.
      */
-    public async insert<T>(data: T, options?: InsertOptions): Promise<T & AutoModelFields> {
+    public async insert<T>(data: T, options?: InsertWriteOptions): Promise<T & AutoModelFields> {
         this.fresh();
         return insertDocument<T>(this.writeContext(), data, options);
     }
@@ -412,7 +418,7 @@ export class Model {
     /**
      * Explicit insert-or-replace write.
      */
-    public async upsert<T>(data: T, options?: UpsertOptions): Promise<T & AutoModelFields> {
+    public async upsert<T>(data: T, options?: UpsertWriteOptions): Promise<T & AutoModelFields> {
         this.fresh();
         return upsertDocument<T>(this.writeContext(), data, options);
     }
