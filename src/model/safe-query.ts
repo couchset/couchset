@@ -1,5 +1,7 @@
 import type {Cluster, QueryOptions} from 'couchbase';
 
+import {bucketIdentifier, fromTarget} from './keyspace';
+
 export type QueryParameters = {[key: string]: any} | any[];
 
 export type QueryLogger = (message: string, details?: any) => void;
@@ -19,12 +21,6 @@ export interface QueryPageResult<T> {
     hasNext: boolean;
     params?: any;
 }
-
-const escapeIdentifier = (identifier: string): string => `\`${identifier.replace(/`/g, '``')}\``;
-
-const safeAlias = (alias: string): string => {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(alias) ? alias : escapeIdentifier(alias);
-};
 
 const queryOptionsWithParameters = (
     params?: QueryParameters,
@@ -83,17 +79,7 @@ const queryPageOptions = (options?: QueryPageOptions): SafeQueryOptions => {
     return queryOptions;
 };
 
-export const bucketIdentifier = (bucketName: string): string => escapeIdentifier(bucketName);
-
-export const fromTarget = (bucketName: string, alias?: string): string => {
-    const keyspace = bucketIdentifier(bucketName);
-
-    if (!alias) {
-        return keyspace;
-    }
-
-    return `${keyspace} AS ${safeAlias(alias)}`;
-};
+export {bucketIdentifier, fromTarget};
 
 export const runQueryRows = async <T>(
     cluster: Cluster,

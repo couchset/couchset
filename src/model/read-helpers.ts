@@ -31,6 +31,7 @@ export interface ModelReadContext {
     collectionName: string;
     cluster: Cluster;
     parse: <T>(data: T) => T;
+    resultKey?: string;
 }
 
 const scopedWhere = (collectionName: string, where?: any): any => {
@@ -79,7 +80,12 @@ const runReadQuery = async <T>(
     try {
         const {rows = []} = await context.cluster.query(query, {parameters});
 
-        return unwrapRows<T>(rows, context.bucketName, selectAll, context.parse);
+        return unwrapRows<T>(
+            rows,
+            context.resultKey || context.bucketName,
+            selectAll,
+            context.parse
+        );
     } catch (error) {
         if (shouldThrow(args)) {
             throw error;

@@ -15,7 +15,8 @@ import {
     page as pageRows,
 } from './read-helpers';
 import type {ModelPageResult, ModelReadArgs, ModelReadContext} from './read-helpers';
-import {bucketIdentifier, fromTarget, runQueryOne, runQueryPage, runQueryRows} from './safe-query';
+import {bucketIdentifier, fromTarget, keyspaceIdentifier} from './keyspace';
+import {runQueryOne, runQueryPage, runQueryRows} from './safe-query';
 import type {
     QueryLogger,
     QueryPageOptions,
@@ -48,14 +49,22 @@ export interface UpdateOptions extends ReplaceOptions {
 
 export interface ModalOptions {
     scope?: string;
+    collection?: string;
     schema?: Record<string, SchemaTypes>;
     graphqlType?: any;
+}
+
+interface CollectionTarget {
+    scopeName?: string;
+    collectionName?: string;
 }
 
 export class Model {
     collection: Collection;
     collectionName: string;
     scope = '_default';
+    private scopeName?: string;
+    private collectionTargetName?: string;
     schema: Record<string, SchemaTypes> = {
         createdAt: 'date',
         updatedAt: 'date',
@@ -66,8 +75,14 @@ export class Model {
         // this.collection = CouchbaseConnection.Instance.getCollection();
         this.collectionName = name;
         if (options) {
+            const hasScope = Object.prototype.hasOwnProperty.call(options, 'scope');
+            const hasCollection = Object.prototype.hasOwnProperty.call(options, 'collection');
             this.graphqlType = (options && options.graphqlType) || null;
             this.scope = (options && options.scope) || '_default';
+            this.scopeName = hasScope ? this.scope : undefined;
+            this.collectionTargetName = hasCollection
+                ? options.collection || '_default'
+                : undefined;
             this.schema = {
                 ...((options && options.schema) || {}),
                 createdAt: 'date',
@@ -94,7 +109,11 @@ export class Model {
     public fresh(): void {
         // if couchbase connection has been init
         if (CouchbaseConnection.Instance.bucketName) {
-            this.collection = CouchbaseConnection.Instance.getCollection();
+            const target = this.collectionTarget();
+            this.collection = CouchbaseConnection.Instance.getCollection(
+                target.scopeName,
+                target.collectionName
+            );
         }
     }
 
@@ -120,12 +139,30 @@ export class Model {
         return this.collection;
     }
 
+    private collectionTarget(): CollectionTarget {
+        if (!this.scopeName && !this.collectionTargetName) {
+            return {};
+        }
+
+        return {
+            scopeName: this.scopeName || '_default',
+            collectionName: this.collectionTargetName || '_default',
+        };
+    }
+
+    private queryResultKey(): string {
+        const target = this.collectionTarget();
+
+        return target.collectionName || this.getBucketName();
+    }
+
     private readContext(): ModelReadContext {
         return {
-            bucketName: this.getBucketName(),
+            bucketName: this.keyspace(),
             collectionName: this.collectionName,
             cluster: this.couchbaseConnection().cluster,
             parse: <T>(data: T) => parseSchema(this.schema, data),
+            resultKey: this.queryResultKey(),
         };
     }
 
@@ -137,10 +174,23 @@ export class Model {
     }
 
     /**
+     * Return this model's SQL++ keyspace target.
+     */
+    public keyspace(): string {
+        const target = this.collectionTarget();
+
+        return keyspaceIdentifier({
+            bucketName: this.getBucketName(),
+            scopeName: target.scopeName,
+            collectionName: target.collectionName,
+        });
+    }
+
+    /**
      * Return a SQL++ FROM target for this model's current bucket.
      */
     public from(alias?: string): string {
-        return fromTarget(this.getBucketName(), alias);
+        return fromTarget(this.keyspace(), alias);
     }
 
     /**
@@ -360,10 +410,9 @@ export class Model {
             };
         }
 
-        const bucketName = CouchbaseConnection.Instance.bucketName;
-
         const rows = await Pagination({
-            bucketName,
+            bucketName: this.keyspace(),
+            resultKey: this.queryResultKey(),
             select,
             where: {where: whereEx, ...customQuery},
             limit,

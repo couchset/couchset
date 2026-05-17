@@ -14,7 +14,7 @@ import {PaginationArgs} from './types';
  * @param args PaginationArgs
  */
 export const Pagination = async (args: PaginationArgs): Promise<any[]> => {
-    const {bucketName = '_default'} = args;
+    const {bucketName = '_default', resultKey = bucketName} = args;
 
     const cluster = CouchbaseConnection.Instance.cluster;
 
@@ -26,7 +26,7 @@ export const Pagination = async (args: PaginationArgs): Promise<any[]> => {
         const {rows} = await cluster.query(query, {parameters});
 
         const completedRows = rows.map((r: any) => {
-            return selectAll ? r[bucketName] : r;
+            return selectAll ? r[resultKey] : r;
         });
 
         return completedRows;

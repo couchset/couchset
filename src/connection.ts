@@ -84,7 +84,13 @@ export class CouchbaseConnection implements CouchsetArgs {
     /**
      * getCollection
      */
-    public getCollection = (): Collection => {
+    public getCollection = (scopeName?: string, collectionName?: string): Collection => {
+        if (scopeName || collectionName) {
+            return this.bucket
+                .scope(scopeName || '_default')
+                .collection(collectionName || '_default');
+        }
+
         return this.bucket.defaultCollection();
     };
 
