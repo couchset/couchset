@@ -4,6 +4,8 @@ export interface CustomQueryArgs {
     query: any;
     limit: number;
     params: any;
+    debug?: boolean;
+    logger?: (message: string, details?: any) => void;
 }
 
 export interface CustomQueryPagination {
@@ -21,12 +23,14 @@ export interface CustomQueryPagination {
 export const CustomQuery = async <T>(
     args: CustomQueryArgs
 ): Promise<[T[], CustomQueryPagination]> => {
-    const {query, limit, params} = args;
+    const {query, limit, params, debug = false, logger} = args;
 
     const cluster = CouchbaseConnection.Instance.cluster;
 
     try {
-        console.log('-> ', query);
+        if (debug && logger) {
+            logger('couchset customQuery', {query});
+        }
 
         const {rows = []} = await cluster.query(query);
 

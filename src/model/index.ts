@@ -7,6 +7,23 @@ import CouchbaseConnection from '../connection';
 import {Pagination} from '../pagination';
 import {generateUUID} from '../uuid';
 
+import {bucketIdentifier, fromTarget, runQueryOne, runQueryPage, runQueryRows} from './safe-query';
+import type {
+    QueryLogger,
+    QueryPageOptions,
+    QueryPageResult,
+    QueryParameters,
+    SafeQueryOptions,
+} from './safe-query';
+
+export type {
+    QueryLogger,
+    QueryPageOptions,
+    QueryPageResult,
+    QueryParameters,
+    SafeQueryOptions,
+} from './safe-query';
+
 export interface AutoModelFields {
     id: string;
     createdAt: Date;
@@ -92,6 +109,53 @@ export class Model {
     public getCollection(): Collection {
         this.fresh();
         return this.collection;
+    }
+
+    /**
+     * Return the active bucket as a SQL++ keyspace identifier.
+     */
+    public bucket(): string {
+        return bucketIdentifier(this.getBucketName());
+    }
+
+    /**
+     * Return a SQL++ FROM target for this model's current bucket.
+     */
+    public from(alias?: string): string {
+        return fromTarget(this.getBucketName(), alias);
+    }
+
+    /**
+     * Run a SQL++ query and return rows directly.
+     */
+    public async queryRows<T>(
+        query: string,
+        params?: QueryParameters,
+        options?: SafeQueryOptions
+    ): Promise<T[]> {
+        return runQueryRows<T>(this.couchbaseConnection().cluster, query, params, options);
+    }
+
+    /**
+     * Run a SQL++ query and return the first row or null.
+     */
+    public async queryOne<T>(
+        query: string,
+        params?: QueryParameters,
+        options?: SafeQueryOptions
+    ): Promise<T | null> {
+        return runQueryOne<T>(this.couchbaseConnection().cluster, query, params, options);
+    }
+
+    /**
+     * Run a SQL++ query using limit + 1 pagination.
+     */
+    public async queryPage<T>(
+        query: string,
+        params?: QueryParameters,
+        options?: QueryPageOptions
+    ): Promise<QueryPageResult<T>> {
+        return runQueryPage<T>(this.couchbaseConnection().cluster, query, params, options);
     }
 
     /**
@@ -258,10 +322,14 @@ export class Model {
      * @returns
      */
     public async customQuery<T>({
+        debug,
+        logger,
         params,
         limit,
         query,
     }: {
+        debug?: boolean;
+        logger?: QueryLogger;
         params: any;
         limit: number;
         query: string;
@@ -270,7 +338,9 @@ export class Model {
         // Where begins here
 
         const response = await CustomQuery<T>({
+            debug,
             limit,
+            logger,
             params,
             query,
         });
