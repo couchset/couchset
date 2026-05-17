@@ -2,8 +2,9 @@ import 'mocha';
 
 import {expect} from 'chai';
 
-import CouchbaseConnection from './connection';
-import {Model} from './model';
+import CouchbaseConnection from '../connection';
+
+import {Model} from './index';
 
 describe('Model safe query APIs', () => {
     const model = new Model('User');

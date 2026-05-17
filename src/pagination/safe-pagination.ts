@@ -8,6 +8,13 @@ export interface PaginationQuery {
     query: string;
     parameters: Record<string, any>;
     selectAll: boolean;
+    limit?: number;
+    offset?: number;
+}
+
+export interface SelectionQueryOptions {
+    includeLimitOffset?: boolean;
+    defaultOrderBy?: Record<string, SortType>;
 }
 
 const comparisonOperators: Record<string, string> = {
@@ -257,20 +264,32 @@ const addNamedParameter = (parameters: Record<string, any>, key: string, value: 
     return `$${key}`;
 };
 
-export const buildPaginationQuery = (args: PaginationArgs): PaginationQuery => {
+export const buildSelectionQuery = (
+    args: PaginationArgs,
+    options: SelectionQueryOptions = {}
+): PaginationQuery => {
     const {
         bucketName = '_default',
         where = {},
         page = 0,
         limit = 10,
-        orderBy = {createdAt: 'DESC'},
+        offset,
+        orderBy = options.defaultOrderBy,
     } = args;
+    const {includeLimitOffset = false} = options;
     const store = new PaginationParameterStore();
     const parameters = store.parameters;
     const {expr: selectExpr, selectAll} = buildSelectExpr(args.select || '*');
-    const offset = page * limit;
+    const queryOffset = typeof offset === 'number' ? offset : page * limit;
     const conditions = where || {};
     const plainJoin = conditions.plainJoin ? ` ${conditions.plainJoin} ` : '';
+    const limitOffsetExpr = includeLimitOffset
+        ? ` LIMIT ${addNamedParameter(parameters, 'cs_limit', limit)} OFFSET ${addNamedParameter(
+              parameters,
+              'cs_offset',
+              queryOffset
+          )}`
+        : '';
 
     const query = `SELECT ${selectExpr} FROM ${collectionIdentifier(
         bucketName
@@ -282,15 +301,20 @@ export const buildPaginationQuery = (args: PaginationArgs): PaginationQuery => {
         conditions.letting,
         conditions.having,
         store
-    )}${buildOrderByExpr(orderBy)} LIMIT ${addNamedParameter(
-        parameters,
-        'cs_limit',
-        limit
-    )} OFFSET ${addNamedParameter(parameters, 'cs_offset', offset)}`;
+    )}${buildOrderByExpr(orderBy)}${limitOffsetExpr}`;
 
     return {
         query,
         parameters,
         selectAll,
+        limit,
+        offset: queryOffset,
     };
+};
+
+export const buildPaginationQuery = (args: PaginationArgs): PaginationQuery => {
+    return buildSelectionQuery(args, {
+        includeLimitOffset: true,
+        defaultOrderBy: {createdAt: 'DESC'},
+    });
 };

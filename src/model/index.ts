@@ -7,6 +7,14 @@ import CouchbaseConnection from '../connection';
 import {Pagination} from '../pagination';
 import {generateUUID} from '../uuid';
 
+import {
+    count as countRows,
+    exists as rowsExist,
+    findMany as findManyRows,
+    findOne as findOneRow,
+    page as pageRows,
+} from './read-helpers';
+import type {ModelPageResult, ModelReadArgs, ModelReadContext} from './read-helpers';
 import {bucketIdentifier, fromTarget, runQueryOne, runQueryPage, runQueryRows} from './safe-query';
 import type {
     QueryLogger,
@@ -16,6 +24,7 @@ import type {
     SafeQueryOptions,
 } from './safe-query';
 
+export type {ModelPageResult, ModelReadArgs} from './read-helpers';
 export type {
     QueryLogger,
     QueryPageOptions,
@@ -111,6 +120,15 @@ export class Model {
         return this.collection;
     }
 
+    private readContext(): ModelReadContext {
+        return {
+            bucketName: this.getBucketName(),
+            collectionName: this.collectionName,
+            cluster: this.couchbaseConnection().cluster,
+            parse: <T>(data: T) => parseSchema(this.schema, data),
+        };
+    }
+
     /**
      * Return the active bucket as a SQL++ keyspace identifier.
      */
@@ -156,6 +174,46 @@ export class Model {
         options?: QueryPageOptions
     ): Promise<QueryPageResult<T>> {
         return runQueryPage<T>(this.couchbaseConnection().cluster, query, params, options);
+    }
+
+    /**
+     * Find many model-scoped documents.
+     */
+    public async findMany<T>(args: ModelReadArgs = {}): Promise<T[]> {
+        this.fresh();
+        return findManyRows<T>(this.readContext(), args);
+    }
+
+    /**
+     * Find the first matching model-scoped document.
+     */
+    public async findOne<T>(args: ModelReadArgs = {}): Promise<T | null> {
+        this.fresh();
+        return findOneRow<T>(this.readContext(), args);
+    }
+
+    /**
+     * Check whether at least one model-scoped document matches.
+     */
+    public async exists(args: ModelReadArgs = {}): Promise<boolean> {
+        this.fresh();
+        return rowsExist(this.readContext(), args);
+    }
+
+    /**
+     * Count model-scoped documents.
+     */
+    public async count(args: ModelReadArgs = {}): Promise<number> {
+        this.fresh();
+        return countRows(this.readContext(), args);
+    }
+
+    /**
+     * Fetch a limit + 1 page of model-scoped documents.
+     */
+    public async page<T>(args: ModelReadArgs = {}): Promise<ModelPageResult<T>> {
+        this.fresh();
+        return pageRows<T>(this.readContext(), args);
     }
 
     /**

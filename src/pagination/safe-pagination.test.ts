@@ -2,9 +2,10 @@ import 'mocha';
 
 import {expect} from 'chai';
 
-import CouchbaseConnection from './connection';
+import CouchbaseConnection from '../connection';
+
 import {Pagination} from './pagination';
-import {buildPaginationQuery} from './pagination/safe-pagination';
+import {buildPaginationQuery} from './safe-pagination';
 
 describe('Safe pagination', () => {
     it('builds pagination queries with SDK parameters', () => {
