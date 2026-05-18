@@ -2,6 +2,7 @@ import 'mocha';
 
 import {expect} from 'chai';
 
+import SharedConnection from '../connection';
 import {Model as NewModel} from '../model';
 
 import CouchbaseConnection from './connection';
@@ -53,6 +54,10 @@ describe('legacy entrypoint', () => {
         expect((legacy as any).queryRows).to.equal(undefined);
         expect((legacy as any).ensureIndexes).to.equal(undefined);
         expect((modern as any).findMany).to.be.a('function');
+    });
+
+    it('shares the modern connection singleton', () => {
+        expect(CouchbaseConnection.Instance).to.equal(SharedConnection.Instance);
     });
 
     it('preserves legacy pagination without SDK parameters', async () => {

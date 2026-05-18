@@ -12,6 +12,18 @@ import {couchset, Model} from 'couchset/legacy';
 
 Use `couchset/legacy` when an application depends on old pagination or custom query behavior. New work should use the main `couchset` path.
 
+Modern and legacy models share the same connection singleton. Initialize CouchSet once and use both model APIs side by side while migrating.
+
+```ts
+import {couchset, Model} from 'couchset';
+import {Model as LegacyModel} from 'couchset/legacy';
+
+await couchset(args);
+
+const users = new Model('User');
+const legacyUsers = new LegacyModel('User');
+```
+
 ## Connection Lifecycle
 
 Models can be constructed before the Couchbase connection is ready. Model methods wait for the shared connection before touching the bucket or collection.

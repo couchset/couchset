@@ -13,9 +13,9 @@ export const couchset = async (args: CouchsetArgs): Promise<boolean> => {
     return Promise.resolve(true);
 };
 
-export const couchsetServerless = (args: CouchsetArgs): Promise<boolean> => {
+export const couchsetServerless = async (args: CouchsetArgs): Promise<boolean> => {
     const couch = CouchbaseConnection.Instance;
-    couch.initServerless(args);
+    await couch.initServerless(args);
     return Promise.resolve(true);
 };
 

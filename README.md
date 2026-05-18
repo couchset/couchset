@@ -290,8 +290,16 @@ await metrics.appendChunk('device-1', [
 Use `couchset/legacy` for applications that still depend on the old model names such as `create`, `findById`, `updateById`, `delete`, `pagination`, or `customQuery`.
 
 ```ts
-import {couchset, Model} from 'couchset/legacy';
+import {couchset, Model} from 'couchset';
+import {Model as LegacyModel} from 'couchset/legacy';
+
+await couchset(args);
+
+const users = new Model('User');
+const legacyUsers = new LegacyModel('User');
 ```
+
+The modern and legacy model APIs share the same connection singleton, reconnect loop, and health state. You can migrate one model at a time without opening a second Couchbase cluster connection.
 
 Modern replacements:
 
