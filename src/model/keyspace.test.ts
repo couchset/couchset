@@ -17,13 +17,13 @@ describe('Model keyspace targets', () => {
             defaultCollection: () => {
                 usedDefaultCollection = true;
                 return {
-                    upsert: async () => undefined,
+                    insert: async () => undefined,
                 };
             },
         } as any;
 
         const model = new Model('User');
-        await model.create({userId: 'ceddy'});
+        await model.insert({userId: 'ceddy'});
 
         expect(usedDefaultCollection).to.equal(true);
         expect(model.bucket()).to.equal('`test-bucket`');
@@ -37,7 +37,7 @@ describe('Model keyspace targets', () => {
         CouchbaseConnection.Instance.bucket = {
             scope: (scopeName: string) => ({
                 collection: (collectionName: string) => ({
-                    upsert: async (key: string, value: any) => {
+                    insert: async (key: string, value: any) => {
                         calls.push({scopeName, collectionName, key, value});
                     },
                 }),
@@ -45,7 +45,7 @@ describe('Model keyspace targets', () => {
         } as any;
 
         const model = new Model('User', {scope: 'app', collection: 'users'});
-        const created = await model.create({userId: 'ceddy'});
+        const created = await model.insert({userId: 'ceddy'});
 
         expect(calls).to.have.length(1);
         expect(calls[0].scopeName).to.equal('app');

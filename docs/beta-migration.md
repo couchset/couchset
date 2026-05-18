@@ -34,7 +34,7 @@ console.log(health());
 
 await couchset.ready();
 
-const user = await users.create({userId: 'ceddy'});
+const user = await users.insert({userId: 'ceddy'});
 
 await shutdown();
 ```
@@ -72,27 +72,19 @@ const page = await users.page({
     page: 0,
 });
 
-const [customRows] = await users.customQuery({
-    query: `SELECT * FROM ${users.bucket()} WHERE userId=$userId LIMIT $limit`,
-    params: {userId: 'ceddy', limit: 25},
-    limit: 25,
-});
+const customRows = await users.queryRows(
+    `SELECT * FROM ${users.bucket()} WHERE userId=$userId LIMIT $limit`,
+    {userId: 'ceddy', limit: 25}
+);
 ```
 
 If a caller intentionally wants the old empty-result fallback, pass `throwOnError: false`.
 
 ```ts
-const rows = await users.pagination({
+const rows = await users.findMany({
     where: {userId: {$eq: 'ceddy'}},
     limit: 25,
     page: 0,
-    throwOnError: false,
-});
-
-const [customRows] = await users.customQuery({
-    query: `SELECT * FROM ${users.bucket()} WHERE userId=$userId LIMIT $limit`,
-    params: {userId: 'ceddy', limit: 25},
-    limit: 25,
     throwOnError: false,
 });
 ```
@@ -130,6 +122,19 @@ await users.restoreById('user::1');
 const exists = await users.exists({where: {userId: {$eq: 'ceddy'}}});
 const count = await users.count({where: {userId: {$eq: 'ceddy'}}});
 ```
+
+## Removed Modern Model Aliases
+
+The old method names now belong to `couchset/legacy`.
+
+| Old method | Modern method |
+| --- | --- |
+| `create()` | `insert()` or `upsert()` |
+| `findById()` | `getById()` |
+| `updateById()` / `save()` | `replaceById()` or `patchById()` |
+| `delete()` | `deleteById()` |
+| `pagination()` | `findMany()` or `page()` |
+| `customQuery()` | `queryRows()`, `queryOne()`, or `queryPage()` |
 
 Index declarations can live on the model and be created at app boot.
 

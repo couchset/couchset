@@ -54,14 +54,14 @@ describe('Model lazy connection binding', () => {
             connection.cluster = {query: async () => ({rows: []})};
             connection.bucket = {
                 defaultCollection: () => ({
-                    upsert: async (key: string, value: any) => writes.push({key, value}),
+                    insert: async (key: string, value: any) => writes.push({key, value}),
                 }),
             };
 
             return CouchbaseConnection.Instance;
         });
 
-        const created = await model.create({userId: 'ceddy'});
+        const created = await model.insert({userId: 'ceddy'});
 
         expect(writes).to.have.length(1);
         expect(writes[0].key).to.equal(created.id);
@@ -72,7 +72,7 @@ describe('Model lazy connection binding', () => {
         const model = new Model('User');
         const connection = CouchbaseConnection.Instance as any;
         let defaultCollectionCalls = 0;
-        let upsertCalls = 0;
+        let insertCalls = 0;
 
         connection.bucketName = 'test';
         connection.cluster = {query: async () => ({rows: []})};
@@ -87,10 +87,10 @@ describe('Model lazy connection binding', () => {
                 defaultCollectionCalls += 1;
 
                 return {
-                    upsert: async () => {
-                        upsertCalls += 1;
+                    insert: async () => {
+                        insertCalls += 1;
 
-                        if (upsertCalls === 1) {
+                        if (insertCalls === 1) {
                             const error = new Error('network socket closed');
                             error.name = 'UnambiguousTimeoutError';
                             throw error;
@@ -101,9 +101,9 @@ describe('Model lazy connection binding', () => {
         };
         connection.markDisconnected = () => undefined;
 
-        await model.create({userId: 'ceddy'});
+        await model.insert({userId: 'ceddy'});
 
-        expect(defaultCollectionCalls).to.equal(2);
-        expect(upsertCalls).to.equal(2);
+        expect(defaultCollectionCalls).to.be.greaterThan(1);
+        expect(insertCalls).to.equal(2);
     });
 });

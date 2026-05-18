@@ -184,7 +184,7 @@ export class TimeSeriesModel<T = any> {
         let existing: TimeSeriesChunk<T> | null = null;
 
         try {
-            existing = await this.model.findById(chunk.id);
+            existing = await this.model.getById(chunk.id);
         } catch (error) {
             existing = null;
         }

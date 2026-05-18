@@ -57,18 +57,15 @@ describe('Model validation and hydrated documents', () => {
     it('runs validation hooks and uses transformed documents', async () => {
         const model = new Model('User', {
             validateCreate: (doc) => ({...doc, createdValidated: true}),
-            validateUpdate: (doc) => ({...doc, updateValidated: true}),
             validateReplace: (doc) => ({...doc, replaceValidated: true}),
         });
 
-        const created = await model.create({id: 'user-1', userId: 'ceddy'});
+        const created = await model.upsert({id: 'user-1', userId: 'ceddy'});
         const inserted = await model.insert({id: 'user-2', userId: 'ceddy'});
-        const updated = await model.updateById('user-1', created);
         const replaced = await model.replaceById('user-1', created);
 
         expect(created.createdValidated).to.equal(true);
         expect(inserted.createdValidated).to.equal(true);
-        expect(updated.updateValidated).to.equal(true);
         expect(replaced.replaceValidated).to.equal(true);
         expect(documents['user-1'].replaceValidated).to.equal(true);
     });
@@ -86,7 +83,7 @@ describe('Model validation and hydrated documents', () => {
             _scope: '_default',
         };
 
-        const found = await model.findById('user-1');
+        const found = await model.getById('user-1');
 
         expect(found.profile.birthDate).to.be.instanceOf(Date);
         expect(found.parsed).to.equal(true);

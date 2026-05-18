@@ -6,7 +6,7 @@
  * 
      let err, user, savedTask;
 
-     [ err, user ] = await awaitTo(UserModel.findById(1));
+     [ err, user ] = await awaitTo(UserModel.getById(1));
      if(!user) return cb('No user found');
 
      [ err, savedTask ] = await awaitTo(TaskModel({userId: user.id, name: 'Demo Task'}));

@@ -43,12 +43,12 @@ describe('Model TTL helpers', () => {
     it('normalizes ttlSeconds and ttl on model writes', async () => {
         const model = new Model('User');
 
-        await model.create({id: 'user-1'}, {ttl: '2m'});
-        await model.insert({id: 'user-2'}, {ttlSeconds: 300});
+        await model.insert({id: 'user-1'}, {ttl: '2m'});
+        await model.upsert({id: 'user-2'}, {ttlSeconds: 300});
         await model.upsert({id: 'user-3'}, {ttl: '1d'});
 
         expect(calls.map((call) => call.options.expiry)).to.deep.equal([120, 300, 86400]);
-        expect(calls.map((call) => call.method)).to.deep.equal(['upsert', 'insert', 'upsert']);
+        expect(calls.map((call) => call.method)).to.deep.equal(['insert', 'upsert', 'upsert']);
     });
 
     it('rejects ambiguous ttl values in strict mode', () => {

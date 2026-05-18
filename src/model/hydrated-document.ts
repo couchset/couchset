@@ -1,11 +1,11 @@
-import type {MutateInOptions, RemoveOptions, ReplaceOptions} from 'couchbase';
+import type {MutateInOptions, ReplaceOptions} from 'couchbase';
 
 import type {PatchByIdArgs} from './write-helpers';
 
 import type {AutoModelFields, DeleteByIdOptions, UpdateOptions} from './index';
 
 export interface HydratedModel<T> {
-    findById(id: string): Promise<T & AutoModelFields>;
+    getById(id: string): Promise<T & AutoModelFields>;
     replaceById(id: string, data: T, options?: UpdateOptions): Promise<T & AutoModelFields>;
     patchById(
         id: string,
@@ -13,7 +13,6 @@ export interface HydratedModel<T> {
         options?: MutateInOptions
     ): Promise<T & AutoModelFields>;
     deleteById(id: string, options?: DeleteByIdOptions): Promise<boolean | (T & AutoModelFields)>;
-    delete(id: string, options?: RemoveOptions): Promise<boolean>;
 }
 
 export type HydratedDocumentData<T> = T & AutoModelFields;
@@ -48,7 +47,7 @@ export class HydratedDocument<T extends {id: string} = any> {
 
     public async reload(): Promise<this> {
         const data = this.toJSON() as T & {id: string};
-        const reloaded = await this.__model.findById(data.id);
+        const reloaded = await this.__model.getById(data.id);
         Object.assign(this, reloaded);
 
         return this;

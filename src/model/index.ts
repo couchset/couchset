@@ -6,12 +6,8 @@ import type {
     ReplaceOptions,
 } from 'couchbase';
 
-// import {AutomaticMethodOptions, AutomaticOutput, automateImplementation} from '../automate';
-import {CustomQuery, CustomQueryPagination} from '../search';
 import {SchemaTypes, parseSchema} from '../utils';
 import CouchbaseConnection from '../connection';
-import {Pagination} from '../pagination';
-import {generateUUID} from '../uuid';
 
 import {applyDefaultWhere, DefaultWhereMode} from './default-scope';
 import {
@@ -25,7 +21,6 @@ import type {ModelPageResult, ModelReadArgs, ModelReadContext} from './read-help
 import {bucketIdentifier, fromTarget, keyspaceIdentifier} from './keyspace';
 import {runQueryOne, runQueryPage, runQueryRows} from './safe-query';
 import type {
-    QueryLogger,
     QueryPageOptions,
     QueryPageResult,
     QueryParameters,
@@ -54,9 +49,8 @@ import {
     EnsureIndexOptions,
     ModelIndexDefinition,
 } from './indexes';
-import {applyTtlOptions} from './ttl';
 import type {ParseHook, ValidationHook} from './validation';
-import {applyValidation, parseDateFields, schemaFromDateFields} from './validation';
+import {parseDateFields, schemaFromDateFields} from './validation';
 
 export type {ModelPageResult, ModelReadArgs} from './read-helpers';
 export type {
@@ -94,11 +88,9 @@ export interface ModalOptions {
     scope?: string;
     collection?: string;
     schema?: Record<string, SchemaTypes>;
-    graphqlType?: any;
     softDelete?: boolean;
     defaultWhere?: any;
     validateCreate?: ValidationHook;
-    validateUpdate?: ValidationHook;
     validateReplace?: ValidationHook;
     parse?: ParseHook;
     dateFields?: string[];
@@ -122,7 +114,6 @@ export class Model {
     private defaultWhereMode: DefaultWhereMode = 'default';
     private softDelete = false;
     private validateCreateHook?: ValidationHook;
-    private validateUpdateHook?: ValidationHook;
     private validateReplaceHook?: ValidationHook;
     private parseHook?: ParseHook;
     private dateFields?: string[];
@@ -131,7 +122,6 @@ export class Model {
         createdAt: 'date',
         updatedAt: 'date',
     };
-    graphqlType = null;
 
     constructor(name: string, options?: ModalOptions) {
         // this.collection = CouchbaseConnection.Instance.getCollection();
@@ -139,7 +129,6 @@ export class Model {
         if (options) {
             const hasScope = Object.prototype.hasOwnProperty.call(options, 'scope');
             const hasCollection = Object.prototype.hasOwnProperty.call(options, 'collection');
-            this.graphqlType = (options && options.graphqlType) || null;
             this.scope = (options && options.scope) || '_default';
             this.scopeName = hasScope ? this.scope : undefined;
             this.collectionTargetName = hasCollection
@@ -148,7 +137,6 @@ export class Model {
             this.softDelete = !!options.softDelete;
             this.defaultWhere = options.defaultWhere;
             this.validateCreateHook = options.validateCreate;
-            this.validateUpdateHook = options.validateUpdate;
             this.validateReplaceHook = options.validateReplace;
             this.parseHook = options.parse;
             this.dateFields = options.dateFields;
@@ -194,21 +182,12 @@ export class Model {
     }
 
     /**
-     * Set setGraphqlType
-     * setGraphqlType
-     */
-    public setGraphqlType(gqlType: any): Model {
-        this.graphqlType = gqlType;
-        return this;
-    }
-
-    /**
      * Refresh and get default collection from CouchbaseConnection
      * Because CouchbaseConnection is a singleton, sometimes it might be undefined depending when model was created
      * So we have to call it from all model methods
      * to avoid error `Cannot read property 'defaultCollection' of null`
      */
-    public fresh(): void {
+    private fresh(): void {
         // if couchbase connection has been init
         if (CouchbaseConnection.Instance.isConnected()) {
             const target = this.collectionTarget();
@@ -252,7 +231,7 @@ export class Model {
     /** Get this collection
      * getCollection
      */
-    public getBucketName(): string {
+    private getBucketName(): string {
         const bucketName = CouchbaseConnection.Instance?.getBucket();
 
         if (!bucketName) {
@@ -265,7 +244,7 @@ export class Model {
     /** Get this collection
      * getCollection
      */
-    public couchbaseConnection(): CouchbaseConnection {
+    private couchbaseConnection(): CouchbaseConnection {
         return CouchbaseConnection.Instance;
     }
 
@@ -320,7 +299,6 @@ export class Model {
             parse: <T>(data: T) => this.parse(data),
             validateCreate: this.validateCreateHook,
             validateReplace: this.validateReplaceHook,
-            validateUpdate: this.validateUpdateHook,
         };
     }
 
@@ -328,13 +306,11 @@ export class Model {
         const options: ModalOptions = {
             dateFields: this.dateFields,
             defaultWhere: this.defaultWhere,
-            graphqlType: this.graphqlType,
             parse: this.parseHook,
             schema: this.schema,
             softDelete: this.softDelete,
             validateCreate: this.validateCreateHook,
             validateReplace: this.validateReplaceHook,
-            validateUpdate: this.validateUpdateHook,
         };
 
         if (this.scopeName) {
@@ -486,26 +462,6 @@ export class Model {
     }
 
     /**
-     * create
-     */
-    public async create<T>(data: T, options?: UpsertWriteOptions): Promise<T & AutoModelFields> {
-        return this.withConnection(async () => {
-            const id = generateUUID();
-            const createdData = {
-                id, // let id be override
-                ...data,
-                createdAt: new Date(),
-                updatedAt: new Date(), // same as created at
-                _type: this.collectionName,
-                _scope: this.scope,
-            };
-            const validated = await applyValidation(createdData, this.validateCreateHook);
-            await this.collection.upsert(validated.id, validated, applyTtlOptions(options));
-            return this.parse(validated);
-        });
-    }
-
-    /**
      * Insert a new document and fail if the id already exists.
      */
     public async insert<T>(data: T, options?: InsertWriteOptions): Promise<T & AutoModelFields> {
@@ -519,13 +475,10 @@ export class Model {
         return this.withConnection(() => upsertDocument<T>(this.writeContext(), data, options));
     }
 
-    /**
-     * findById
-     */
-    public async findById(id: string, options?: GetOptions): Promise<any & AutoModelFields> {
+    public async getById<T>(id: string, options?: GetOptions): Promise<T & AutoModelFields> {
         return this.withConnection(async () => {
             const data = await this.collection.get(id, options);
-            return this.parse(data.content);
+            return this.parse<T & AutoModelFields>(data.content);
         });
     }
 
@@ -533,7 +486,7 @@ export class Model {
         id: string,
         options?: GetOptions
     ): Promise<Hydrated<T>> {
-        const data = await this.findById(id, options);
+        const data = await this.getById<T>(id, options);
 
         return this.hydrate<T>(data);
     }
@@ -546,30 +499,6 @@ export class Model {
         options?: GetOptions
     ): Promise<FindByIdWithMetaResult<T>> {
         return this.withConnection(() => findByIdWithMetaDoc<T>(this.writeContext(), id, options));
-    }
-
-    /**
-     * update
-     */
-    public async updateById<T>(id: string, data: T, opt?: UpdateOptions): Promise<T> {
-        return this.withConnection(async () => {
-            const {silent = false, ...options} = opt || {};
-
-            const updatedDocument: any = {
-                ...data,
-                id,
-                _type: this.collectionName, // type and scope must be defined
-                _scope: this.scope,
-            };
-
-            if (!silent) {
-                updatedDocument.updatedAt = new Date();
-            }
-
-            const validated = await applyValidation(updatedDocument, this.validateUpdateHook);
-            await this.collection.replace(id, validated, options);
-            return this.parse(validated);
-        });
     }
 
     /**
@@ -642,136 +571,13 @@ export class Model {
         const {hard = false, ...removeOptions} = options || {};
 
         if (hard || !this.softDelete) {
-            return this.delete(id, removeOptions);
+            return this.withConnection(async () => {
+                await this.collection.remove(id, removeOptions);
+                return true;
+            });
         }
 
         return this.softDeleteById<T>(id);
-    }
-
-    /**
-     * save
-     */
-    public async save<T>(data: T & {id: string}, opt?: UpdateOptions): Promise<T> {
-        return this.withConnection(async () => {
-            const id = data && data.id;
-
-            const {silent = false, ...options} = opt || {};
-
-            const updatedDocument: any = {
-                ...data,
-                id,
-                _type: this.collectionName, // type and scope must be defined
-                _scope: this.scope,
-            };
-
-            if (!silent) {
-                updatedDocument.updatedAt = new Date();
-            }
-
-            if (!id) {
-                throw new Error('document must have id');
-            }
-            const validated = await applyValidation(updatedDocument, this.validateUpdateHook);
-            await this.collection.replace(id, validated, options);
-            return this.parse(validated);
-        });
-    }
-
-    public async delete(id: string, options?: RemoveOptions): Promise<boolean> {
-        return this.withConnection(async () => {
-            await this.collection.remove(id, options);
-            return true;
-        });
-    }
-
-    /**
-     * Pagination
-     *  
-        select = ['id', 'createdAt']
-        where = {
-         where: { owner: { $eq: "stoqey" }, _type: { $eq: "Trade" } },
-        },
-        page = 0,
-        limit = 10,
-        orderBy = { createdAt: "DESC" },
-    * @param args PaginationArgs
-    */
-    public async pagination({
-        select,
-        where,
-        orderBy,
-        limit,
-        offset,
-        page,
-        customQuery = {},
-        throwOnError,
-    }: {
-        select?: any[] | string;
-        where?: any;
-        orderBy?: any;
-        limit?: number;
-        offset?: number;
-        page?: number;
-        customQuery?: any; // can be $and or any other valid quries
-        throwOnError?: boolean;
-    }): Promise<any[]> {
-        return this.withConnection(async () => {
-            // Where begins here
-            let whereEx = {_type: {$eq: this.collectionName}};
-
-            if (where) {
-                whereEx = {
-                    ...whereEx,
-                    ...where,
-                };
-            }
-
-            const rows = await Pagination({
-                bucketName: this.keyspace(),
-                resultKey: this.queryResultKey(),
-                select,
-                where: {where: whereEx, ...customQuery},
-                limit,
-                offset,
-                page,
-                orderBy,
-                throwOnError,
-            });
-
-            return rows.map((r) => this.parse(r));
-        });
-    }
-
-    /**
-     * Run a custom query with model parsing
-     * @param { select, query }
-     * @returns
-     */
-    public async customQuery<T>({
-        debug,
-        logger,
-        params,
-        limit,
-        query,
-        throwOnError,
-    }: {
-        debug?: boolean;
-        logger?: QueryLogger;
-        params?: QueryParameters;
-        limit: number;
-        query: string;
-        throwOnError?: boolean;
-    }): Promise<[T[], CustomQueryPagination]> {
-        return this.withConnection(() =>
-            CustomQuery<T>({
-                debug,
-                limit,
-                logger,
-                params,
-                query,
-                throwOnError,
-            })
-        );
     }
 
     public async findDocOne<T extends {id: string}>(
@@ -792,16 +598,6 @@ export class Model {
 
         return this.parseHook ? this.parseHook(parsedDates) : parsedDates;
     }
-
-    // /**
-    //  *
-    //  * @param args AutomaticModelOptions
-    //  * @returns
-    //  */
-    // public automate(args?: Partial<AutomaticMethodOptions>): AutomaticOutput {
-    //     this.fresh(); // refresh
-    //     return automateImplementation(this.graphqlType, {model: this, ...args});
-    // }
 }
 
 export default Model;

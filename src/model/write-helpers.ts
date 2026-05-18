@@ -21,7 +21,6 @@ export interface ModelWriteContext {
     scope: string;
     parse: <T>(data: T) => T;
     validateCreate?: ValidationHook;
-    validateUpdate?: ValidationHook;
     validateReplace?: ValidationHook;
 }
 
