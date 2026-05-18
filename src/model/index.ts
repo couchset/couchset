@@ -174,6 +174,7 @@ export class Model {
         const seenQueries = new Set<string>();
 
         for (const model of Model.registeredModels) {
+            await model.prepare();
             const statements = model.indexStatements(options);
             const pending = statements.filter((query) => !seenQueries.has(query));
 
@@ -209,7 +210,7 @@ export class Model {
      */
     public fresh(): void {
         // if couchbase connection has been init
-        if (CouchbaseConnection.Instance.bucketName) {
+        if (CouchbaseConnection.Instance.isConnected()) {
             const target = this.collectionTarget();
             this.collection = CouchbaseConnection.Instance.getCollection(
                 target.scopeName,
@@ -218,11 +219,47 @@ export class Model {
         }
     }
 
+    private async prepare(): Promise<void> {
+        const connection = this.couchbaseConnection();
+
+        if (!connection.bucket) {
+            await connection.ready();
+        }
+
+        const target = this.collectionTarget();
+        this.collection = connection.getCollection(target.scopeName, target.collectionName);
+    }
+
+    private async withConnection<T>(operation: () => Promise<T>): Promise<T> {
+        await this.prepare();
+
+        try {
+            return await operation();
+        } catch (error) {
+            const connection = this.couchbaseConnection();
+
+            if (!connection.shouldReconnect(error)) {
+                throw error;
+            }
+
+            connection.markDisconnected(error);
+            await this.prepare();
+
+            return operation();
+        }
+    }
+
     /** Get this collection
      * getCollection
      */
     public getBucketName(): string {
-        return CouchbaseConnection.Instance?.getBucket();
+        const bucketName = CouchbaseConnection.Instance?.getBucket();
+
+        if (!bucketName) {
+            throw new Error('couchset is not connected; call couchset(args) first');
+        }
+
+        return bucketName;
     }
 
     /** Get this collection
@@ -352,13 +389,13 @@ export class Model {
      * Create this model's declared indexes if Couchbase does not already have them.
      */
     public async ensureIndexes(options?: EnsureIndexOptions): Promise<string[]> {
-        this.fresh();
-
-        return ensureModelIndexes(
-            this.couchbaseConnection().cluster,
-            this.keyspace(),
-            this.indexes,
-            options
+        return this.withConnection(() =>
+            ensureModelIndexes(
+                this.couchbaseConnection().cluster,
+                this.keyspace(),
+                this.indexes,
+                options
+            )
         );
     }
 
@@ -370,7 +407,9 @@ export class Model {
         params?: QueryParameters,
         options?: SafeQueryOptions
     ): Promise<T[]> {
-        return runQueryRows<T>(this.couchbaseConnection().cluster, query, params, options);
+        return this.withConnection(() =>
+            runQueryRows<T>(this.couchbaseConnection().cluster, query, params, options)
+        );
     }
 
     /**
@@ -381,7 +420,9 @@ export class Model {
         params?: QueryParameters,
         options?: SafeQueryOptions
     ): Promise<T | null> {
-        return runQueryOne<T>(this.couchbaseConnection().cluster, query, params, options);
+        return this.withConnection(() =>
+            runQueryOne<T>(this.couchbaseConnection().cluster, query, params, options)
+        );
     }
 
     /**
@@ -392,47 +433,44 @@ export class Model {
         params?: QueryParameters,
         options?: QueryPageOptions
     ): Promise<QueryPageResult<T>> {
-        return runQueryPage<T>(this.couchbaseConnection().cluster, query, params, options);
+        return this.withConnection(() =>
+            runQueryPage<T>(this.couchbaseConnection().cluster, query, params, options)
+        );
     }
 
     /**
      * Find many model-scoped documents.
      */
     public async findMany<T>(args: ModelReadArgs = {}): Promise<T[]> {
-        this.fresh();
-        return findManyRows<T>(this.readContext(), this.readArgs(args));
+        return this.withConnection(() => findManyRows<T>(this.readContext(), this.readArgs(args)));
     }
 
     /**
      * Find the first matching model-scoped document.
      */
     public async findOne<T>(args: ModelReadArgs = {}): Promise<T | null> {
-        this.fresh();
-        return findOneRow<T>(this.readContext(), this.readArgs(args));
+        return this.withConnection(() => findOneRow<T>(this.readContext(), this.readArgs(args)));
     }
 
     /**
      * Check whether at least one model-scoped document matches.
      */
     public async exists(args: ModelReadArgs = {}): Promise<boolean> {
-        this.fresh();
-        return rowsExist(this.readContext(), this.readArgs(args));
+        return this.withConnection(() => rowsExist(this.readContext(), this.readArgs(args)));
     }
 
     /**
      * Count model-scoped documents.
      */
     public async count(args: ModelReadArgs = {}): Promise<number> {
-        this.fresh();
-        return countRows(this.readContext(), this.readArgs(args));
+        return this.withConnection(() => countRows(this.readContext(), this.readArgs(args)));
     }
 
     /**
      * Fetch a limit + 1 page of model-scoped documents.
      */
     public async page<T>(args: ModelReadArgs = {}): Promise<ModelPageResult<T>> {
-        this.fresh();
-        return pageRows<T>(this.readContext(), this.readArgs(args));
+        return this.withConnection(() => pageRows<T>(this.readContext(), this.readArgs(args)));
     }
 
     public withDeleted(): Model {
@@ -451,53 +489,44 @@ export class Model {
      * create
      */
     public async create<T>(data: T, options?: UpsertWriteOptions): Promise<T & AutoModelFields> {
-        this.fresh();
-        const id = generateUUID();
-        const createdData = {
-            id, // let id be override
-            ...data,
-            createdAt: new Date(),
-            updatedAt: new Date(), // same as created at
-            _type: this.collectionName,
-            _scope: this.scope,
-        };
-
-        try {
+        return this.withConnection(async () => {
+            const id = generateUUID();
+            const createdData = {
+                id, // let id be override
+                ...data,
+                createdAt: new Date(),
+                updatedAt: new Date(), // same as created at
+                _type: this.collectionName,
+                _scope: this.scope,
+            };
             const validated = await applyValidation(createdData, this.validateCreateHook);
             await this.collection.upsert(validated.id, validated, applyTtlOptions(options));
             return this.parse(validated);
-        } catch (error) {
-            throw error;
-        }
+        });
     }
 
     /**
      * Insert a new document and fail if the id already exists.
      */
     public async insert<T>(data: T, options?: InsertWriteOptions): Promise<T & AutoModelFields> {
-        this.fresh();
-        return insertDocument<T>(this.writeContext(), data, options);
+        return this.withConnection(() => insertDocument<T>(this.writeContext(), data, options));
     }
 
     /**
      * Explicit insert-or-replace write.
      */
     public async upsert<T>(data: T, options?: UpsertWriteOptions): Promise<T & AutoModelFields> {
-        this.fresh();
-        return upsertDocument<T>(this.writeContext(), data, options);
+        return this.withConnection(() => upsertDocument<T>(this.writeContext(), data, options));
     }
 
     /**
      * findById
      */
     public async findById(id: string, options?: GetOptions): Promise<any & AutoModelFields> {
-        this.fresh();
-        try {
+        return this.withConnection(async () => {
             const data = await this.collection.get(id, options);
             return this.parse(data.content);
-        } catch (error) {
-            throw error;
-        }
+        });
     }
 
     public async findDocById<T extends {id: string}>(
@@ -516,36 +545,31 @@ export class Model {
         id: string,
         options?: GetOptions
     ): Promise<FindByIdWithMetaResult<T>> {
-        this.fresh();
-        return findByIdWithMetaDoc<T>(this.writeContext(), id, options);
+        return this.withConnection(() => findByIdWithMetaDoc<T>(this.writeContext(), id, options));
     }
 
     /**
      * update
      */
     public async updateById<T>(id: string, data: T, opt?: UpdateOptions): Promise<T> {
-        this.fresh();
+        return this.withConnection(async () => {
+            const {silent = false, ...options} = opt || {};
 
-        const {silent = false, ...options} = opt || {};
+            const updatedDocument: any = {
+                ...data,
+                id,
+                _type: this.collectionName, // type and scope must be defined
+                _scope: this.scope,
+            };
 
-        const updatedDocument: any = {
-            ...data,
-            id,
-            _type: this.collectionName, // type and scope must be defined
-            _scope: this.scope,
-        };
+            if (!silent) {
+                updatedDocument.updatedAt = new Date();
+            }
 
-        if (!silent) {
-            updatedDocument.updatedAt = new Date();
-        }
-
-        try {
             const validated = await applyValidation(updatedDocument, this.validateUpdateHook);
             await this.collection.replace(id, validated, options);
             return this.parse(validated);
-        } catch (error) {
-            throw error;
-        }
+        });
     }
 
     /**
@@ -556,8 +580,9 @@ export class Model {
         data: T,
         options?: UpdateOptions
     ): Promise<T & AutoModelFields> {
-        this.fresh();
-        return replaceDocumentById<T>(this.writeContext(), id, data, options);
+        return this.withConnection(() =>
+            replaceDocumentById<T>(this.writeContext(), id, data, options)
+        );
     }
 
     /**
@@ -568,16 +593,18 @@ export class Model {
         patch: PatchByIdArgs,
         options?: MutateInOptions
     ): Promise<T & AutoModelFields> {
-        this.fresh();
-        return patchDocumentById<T>(this.writeContext(), id, patch, options);
+        return this.withConnection(() =>
+            patchDocumentById<T>(this.writeContext(), id, patch, options)
+        );
     }
 
     /**
      * Couchbase subdocument mutation escape hatch.
      */
     public async mutateById(id: string, specs: any[], options?: MutateInOptions): Promise<any> {
-        this.fresh();
-        return mutateDocumentById(this.writeContext(), id, specs, options);
+        return this.withConnection(() =>
+            mutateDocumentById(this.writeContext(), id, specs, options)
+        );
     }
 
     /**
@@ -589,15 +616,15 @@ export class Model {
         delta: number,
         options?: MutateInOptions
     ): Promise<T & AutoModelFields> {
-        this.fresh();
-        return incrementDocumentById<T>(this.writeContext(), id, field, delta, options);
+        return this.withConnection(() =>
+            incrementDocumentById<T>(this.writeContext(), id, field, delta, options)
+        );
     }
 
     public async softDeleteById<T>(
         id: string,
         options?: MutateInOptions
     ): Promise<T & AutoModelFields> {
-        this.fresh();
         return this.patchById<T>(id, {$set: {deleted: true, deletedAt: new Date()}}, options);
     }
 
@@ -605,7 +632,6 @@ export class Model {
         id: string,
         options?: MutateInOptions
     ): Promise<T & AutoModelFields> {
-        this.fresh();
         return this.patchById<T>(id, {$unset: ['deleted', 'deletedAt']}, options);
     }
 
@@ -626,44 +652,36 @@ export class Model {
      * save
      */
     public async save<T>(data: T & {id: string}, opt?: UpdateOptions): Promise<T> {
-        this.fresh();
+        return this.withConnection(async () => {
+            const id = data && data.id;
 
-        const id = data && data.id;
+            const {silent = false, ...options} = opt || {};
 
-        const {silent = false, ...options} = opt || {};
+            const updatedDocument: any = {
+                ...data,
+                id,
+                _type: this.collectionName, // type and scope must be defined
+                _scope: this.scope,
+            };
 
-        const updatedDocument: any = {
-            ...data,
-            id,
-            _type: this.collectionName, // type and scope must be defined
-            _scope: this.scope,
-        };
+            if (!silent) {
+                updatedDocument.updatedAt = new Date();
+            }
 
-        if (!silent) {
-            updatedDocument.updatedAt = new Date();
-        }
-
-        try {
             if (!id) {
                 throw new Error('document must have id');
             }
             const validated = await applyValidation(updatedDocument, this.validateUpdateHook);
             await this.collection.replace(id, validated, options);
             return this.parse(validated);
-        } catch (error) {
-            console.error(error);
-            throw error;
-        }
+        });
     }
 
     public async delete(id: string, options?: RemoveOptions): Promise<boolean> {
-        this.fresh();
-        try {
+        return this.withConnection(async () => {
             await this.collection.remove(id, options);
             return true;
-        } catch (error) {
-            throw error;
-        }
+        });
     }
 
     /**
@@ -693,28 +711,29 @@ export class Model {
         page?: number;
         customQuery?: any; // can be $and or any other valid quries
     }): Promise<any[]> {
-        this.fresh(); // refresh
-        // Where begins here
-        let whereEx = {_type: {$eq: this.collectionName}};
+        return this.withConnection(async () => {
+            // Where begins here
+            let whereEx = {_type: {$eq: this.collectionName}};
 
-        if (where) {
-            whereEx = {
-                ...whereEx,
-                ...where,
-            };
-        }
+            if (where) {
+                whereEx = {
+                    ...whereEx,
+                    ...where,
+                };
+            }
 
-        const rows = await Pagination({
-            bucketName: this.keyspace(),
-            resultKey: this.queryResultKey(),
-            select,
-            where: {where: whereEx, ...customQuery},
-            limit,
-            page,
-            orderBy,
+            const rows = await Pagination({
+                bucketName: this.keyspace(),
+                resultKey: this.queryResultKey(),
+                select,
+                where: {where: whereEx, ...customQuery},
+                limit,
+                page,
+                orderBy,
+            });
+
+            return rows.map((r) => this.parse(r));
         });
-
-        return rows.map((r) => this.parse(r));
     }
 
     /**
@@ -735,18 +754,15 @@ export class Model {
         limit: number;
         query: string;
     }): Promise<[T[], CustomQueryPagination]> {
-        this.fresh(); // refresh
-        // Where begins here
-
-        const response = await CustomQuery<T>({
-            debug,
-            limit,
-            logger,
-            params,
-            query,
-        });
-
-        return response;
+        return this.withConnection(() =>
+            CustomQuery<T>({
+                debug,
+                limit,
+                logger,
+                params,
+                query,
+            })
+        );
     }
 
     public async findDocOne<T extends {id: string}>(
@@ -762,7 +778,6 @@ export class Model {
     }
 
     public parse<T>(data: T): T {
-        this.fresh(); // refresh
         const parsed = parseSchema(this.schema, data);
         const parsedDates = parseDateFields(parsed, this.dateFields);
 

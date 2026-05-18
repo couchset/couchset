@@ -8,6 +8,8 @@ export interface CouchsetArgs {
     password: string;
     proxy?: string;
     force?: boolean;
+    autoReconnect?: boolean;
+    reconnectIntervalMs?: number;
 }
 
 interface ConnectionSettings {
@@ -17,6 +19,30 @@ interface ConnectionSettings {
     password: string;
     proxy?: string;
 }
+
+export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
+
+export interface ConnectionHealth {
+    state: ConnectionState;
+    autoReconnect: boolean;
+    reconnectIntervalMs: number;
+    bucketName: string;
+    lastError?: any;
+}
+
+const envFlag = (value: string | undefined, fallback: boolean): boolean => {
+    if (value === undefined) {
+        return fallback;
+    }
+
+    return !['0', 'false', 'off', 'no'].includes(value.toLowerCase());
+};
+
+const envNumber = (value: string | undefined, fallback: number): number => {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
 
 /**
  * CouchbaseConnection class
@@ -29,6 +55,15 @@ export class CouchbaseConnection implements CouchsetArgs {
     cluster: Cluster = null;
     private connectionPromise?: Promise<CouchbaseConnection>;
     private connectionSettings?: ConnectionSettings;
+    private reconnectPromise?: Promise<CouchbaseConnection>;
+    private reconnectReject?: (error: Error) => void;
+    private reconnectTimer?: ReturnType<typeof setTimeout>;
+    private healthTimer?: ReturnType<typeof setTimeout>;
+    private connectionState: ConnectionState = 'idle';
+    private autoReconnectEnabled = true;
+    private reconnectDelayMs = 5000;
+    private manuallyClosed = false;
+    private lastConnectionError?: any;
 
     // Args
     connectionString: string = null;
@@ -41,6 +76,17 @@ export class CouchbaseConnection implements CouchsetArgs {
     }
 
     private constructor() {}
+
+    private configureReconnect(args: CouchsetArgs): void {
+        this.autoReconnectEnabled =
+            typeof args.autoReconnect === 'boolean'
+                ? args.autoReconnect
+                : envFlag(process.env.COUCHSET_RECONNECT, true);
+        this.reconnectDelayMs =
+            typeof args.reconnectIntervalMs === 'number' && args.reconnectIntervalMs > 0
+                ? args.reconnectIntervalMs
+                : envNumber(process.env.COUCHSET_RECONNECT_INTERVAL_MS, 5000);
+    }
 
     private normalizeArgs(args: CouchsetArgs): ConnectionSettings {
         const {connectionString, password, username, bucketName = 'default', proxy} = args;
@@ -81,21 +127,161 @@ export class CouchbaseConnection implements CouchsetArgs {
         );
     }
 
+    private connectionOptions(settings: ConnectionSettings): any {
+        const options: any = {
+            password: settings.password,
+            username: settings.username,
+        };
+
+        if (settings.proxy) {
+            options.proxy = settings.proxy;
+        }
+
+        return options;
+    }
+
+    private clearReconnectTimer(): void {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = undefined;
+        }
+    }
+
+    private clearHealthTimer(): void {
+        if (this.healthTimer) {
+            clearTimeout(this.healthTimer);
+            this.healthTimer = undefined;
+        }
+    }
+
+    private scheduleTimer(callback: () => void, unref = true): ReturnType<typeof setTimeout> {
+        const timer = setTimeout(callback, this.reconnectDelayMs);
+
+        if (unref && typeof (timer as any).unref === 'function') {
+            (timer as any).unref();
+        }
+
+        return timer;
+    }
+
+    private rawPing = async (): Promise<any> => {
+        if (!this.cluster) {
+            throw new Error('couchset is not connected; call couchset(args) first');
+        }
+
+        if (typeof (this.cluster as any).ping === 'function') {
+            return (this.cluster as any).ping();
+        }
+
+        return this.cluster.query('SELECT 1');
+    };
+
+    private openCluster = (settings: ConnectionSettings): Promise<Cluster> => {
+        return couchbase.connect(settings.connectionString, this.connectionOptions(settings));
+    };
+
+    private scheduleHealthCheck(): void {
+        this.clearHealthTimer();
+
+        if (!this.autoReconnectEnabled || this.manuallyClosed) {
+            return;
+        }
+
+        this.healthTimer = this.scheduleTimer(async () => {
+            try {
+                await this.rawPing();
+                this.scheduleHealthCheck();
+            } catch (error) {
+                this.markDisconnected(error);
+            }
+        });
+    }
+
+    private connectWithSettings = async (
+        settings: ConnectionSettings
+    ): Promise<CouchbaseConnection> => {
+        const cluster = await this.openCluster(settings);
+
+        if (this.manuallyClosed) {
+            if (cluster && typeof (cluster as any).close === 'function') {
+                await (cluster as any).close();
+            }
+            throw new Error('couchset reconnect stopped');
+        }
+
+        this.cluster = cluster as any;
+        this.bucket = this.cluster.bucket(settings.bucketName);
+        this.connectionState = 'connected';
+        this.lastConnectionError = undefined;
+        this.scheduleHealthCheck();
+
+        return this;
+    };
+
+    private startReconnect = (): Promise<CouchbaseConnection> => {
+        if (this.reconnectPromise) {
+            return this.reconnectPromise;
+        }
+
+        if (!this.autoReconnectEnabled || !this.connectionSettings || this.manuallyClosed) {
+            return Promise.reject(
+                new Error('couchset reconnect is disabled or no connection settings are available')
+            );
+        }
+
+        this.connectionState = 'reconnecting';
+
+        this.reconnectPromise = new Promise<CouchbaseConnection>((resolve, reject) => {
+            this.reconnectReject = reject;
+
+            const attempt = async () => {
+                if (this.manuallyClosed || !this.connectionSettings) {
+                    reject(new Error('couchset reconnect stopped'));
+                    return;
+                }
+
+                try {
+                    const connection = await this.connectWithSettings(this.connectionSettings);
+                    this.reconnectPromise = undefined;
+                    this.reconnectReject = undefined;
+                    this.clearReconnectTimer();
+                    resolve(connection);
+                } catch (error) {
+                    this.lastConnectionError = error;
+                    this.connectionState = 'reconnecting';
+                    this.reconnectTimer = this.scheduleTimer(attempt, false);
+                }
+            };
+
+            attempt();
+        });
+
+        return this.reconnectPromise;
+    };
+
     /**
      * start
      */
     public init = async (args: CouchsetArgs): Promise<CouchbaseConnection> => {
         const settings = this.normalizeArgs(args);
+        this.configureReconnect(args);
 
         if (this.connectionPromise && this.sameSettings(settings)) {
             return this.connectionPromise;
+        }
+
+        if (this.reconnectPromise && this.sameSettings(settings)) {
+            return this.reconnectPromise;
         }
 
         if (this.isConnected() && this.sameSettings(settings)) {
             return this;
         }
 
-        if ((this.isConnected() || this.connectionPromise) && !args.force) {
+        if (
+            (this.isConnected() || this.connectionPromise || this.reconnectPromise) &&
+            !args.force
+        ) {
             throw this.settingsError();
         }
 
@@ -105,29 +291,25 @@ export class CouchbaseConnection implements CouchsetArgs {
 
         if (args.force) {
             await this.shutdown();
+            this.configureReconnect(args);
         }
 
-        const connectionOpt: any = {
-            password: settings.password,
-            username: settings.username,
-        };
-
-        if (settings.proxy) {
-            connectionOpt.proxy = settings.proxy;
-        }
-
+        this.manuallyClosed = false;
+        this.clearReconnectTimer();
+        this.clearHealthTimer();
         this.assignSettings(settings);
-        this.connectionPromise = couchbase
-            .connect(settings.connectionString, connectionOpt)
-            .then((cluster) => {
-                this.cluster = cluster as any;
-                this.bucket = this.cluster.bucket(settings.bucketName);
+        this.connectionState = 'connecting';
+        this.connectionPromise = this.connectWithSettings(settings)
+            .then((connection) => {
+                this.connectionPromise = undefined;
 
-                return this;
+                return connection;
             })
             .catch((error) => {
                 this.connectionPromise = undefined;
                 this.connectionSettings = undefined;
+                this.connectionState = 'idle';
+                this.lastConnectionError = error;
                 throw error;
             });
 
@@ -139,6 +321,7 @@ export class CouchbaseConnection implements CouchsetArgs {
      */
     public initServerless = (args: CouchsetArgs): CouchbaseConnection => {
         const settings = this.normalizeArgs(args);
+        this.configureReconnect(args);
 
         if (this.isConnected() && this.sameSettings(settings)) {
             return this;
@@ -150,23 +333,21 @@ export class CouchbaseConnection implements CouchsetArgs {
 
         if (args.force) {
             this.shutdown().catch(() => undefined);
+            this.configureReconnect(args);
         }
 
+        this.manuallyClosed = false;
         this.assignSettings(settings);
 
-        const connectionOpt = {
-            password: settings.password,
-            username: settings.username,
-        };
-
-        if (settings.proxy) {
-            connectionOpt['proxy'] = settings.proxy;
-        }
-
-        const cluster = new couchbase.Cluster(settings.connectionString, connectionOpt);
+        const cluster = new couchbase.Cluster(
+            settings.connectionString,
+            this.connectionOptions(settings)
+        );
 
         this.cluster = cluster as any;
         this.bucket = this.cluster.bucket(settings.bucketName);
+        this.connectionState = 'connected';
+        this.scheduleHealthCheck();
 
         return this;
     };
@@ -197,12 +378,20 @@ export class CouchbaseConnection implements CouchsetArgs {
     };
 
     public ready = async (): Promise<CouchbaseConnection> => {
+        if (this.isConnected()) {
+            return this;
+        }
+
         if (this.connectionPromise) {
             return this.connectionPromise;
         }
 
-        if (this.isConnected()) {
-            return this;
+        if (this.reconnectPromise) {
+            return this.reconnectPromise;
+        }
+
+        if (this.autoReconnectEnabled && this.connectionSettings && !this.manuallyClosed) {
+            return this.startReconnect();
         }
 
         throw new Error('couchset is not connected; call couchset(args) first');
@@ -211,11 +400,76 @@ export class CouchbaseConnection implements CouchsetArgs {
     public ping = async (): Promise<any> => {
         await this.ready();
 
-        if (this.cluster && typeof (this.cluster as any).ping === 'function') {
-            return (this.cluster as any).ping();
+        try {
+            return await this.rawPing();
+        } catch (error) {
+            this.markDisconnected(error);
+            throw error;
+        }
+    };
+
+    public state = (): ConnectionState => {
+        return this.connectionState;
+    };
+
+    public health = (): ConnectionHealth => {
+        return {
+            autoReconnect: this.autoReconnectEnabled,
+            bucketName: this.bucketName,
+            lastError: this.lastConnectionError,
+            reconnectIntervalMs: this.reconnectDelayMs,
+            state: this.connectionState,
+        };
+    };
+
+    public shouldReconnect = (error: unknown): boolean => {
+        if (!this.autoReconnectEnabled || this.manuallyClosed) {
+            return false;
         }
 
-        return this.cluster.query('SELECT 1');
+        const caught = error as any;
+        const name = String(caught?.name || caught?.constructor?.name || '');
+        const message = String(caught?.message || '');
+        const text = `${name} ${message}`.toLowerCase();
+
+        return [
+            'timeout',
+            'network',
+            'connect',
+            'closed',
+            'disconnect',
+            'unavailable',
+            'socket',
+            'econnrefused',
+            'etimedout',
+            'temporary failure',
+        ].some((value) => text.includes(value));
+    };
+
+    public markDisconnected = (error?: unknown): void => {
+        if (!this.connectionSettings || this.manuallyClosed) {
+            return;
+        }
+
+        const cluster = this.cluster;
+
+        this.lastConnectionError = error;
+        this.connectionPromise = undefined;
+        this.cluster = null;
+        this.bucket = null;
+        this.clearHealthTimer();
+
+        if (cluster && typeof (cluster as any).close === 'function') {
+            (cluster as any).close().catch(() => undefined);
+        }
+
+        if (this.autoReconnectEnabled) {
+            this.connectionState = 'reconnecting';
+            this.startReconnect().catch(() => undefined);
+            return;
+        }
+
+        this.connectionState = 'idle';
     };
 
     /**
@@ -224,6 +478,14 @@ export class CouchbaseConnection implements CouchsetArgs {
     public shutdown = async (): Promise<void> => {
         const cluster = this.cluster;
 
+        this.manuallyClosed = true;
+        this.clearReconnectTimer();
+        this.clearHealthTimer();
+        if (this.reconnectReject) {
+            this.reconnectReject(new Error('couchset reconnect stopped'));
+        }
+        this.reconnectPromise = undefined;
+        this.reconnectReject = undefined;
         this.connectionPromise = undefined;
         this.connectionSettings = undefined;
         this.cluster = null;
@@ -232,6 +494,8 @@ export class CouchbaseConnection implements CouchsetArgs {
         this.bucketName = null;
         this.username = null;
         this.password = null;
+        this.connectionState = 'closed';
+        this.lastConnectionError = undefined;
 
         if (cluster && typeof (cluster as any).close === 'function') {
             await (cluster as any).close();
