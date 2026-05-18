@@ -1,48 +1,8 @@
-import type {Collection, Cluster, Bucket} from 'couchbase';
+import type {Bucket, Cluster, Collection} from 'couchbase';
 import * as couchbase from 'couchbase';
 
-export interface CouchsetArgs {
-    connectionString: string;
-    bucketName: string;
-    username: string;
-    password: string;
-    proxy?: string;
-    force?: boolean;
-    autoReconnect?: boolean;
-    reconnectIntervalMs?: number;
-}
-
-interface ConnectionSettings {
-    connectionString: string;
-    bucketName: string;
-    username: string;
-    password: string;
-    proxy?: string;
-}
-
-export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
-
-export interface ConnectionHealth {
-    state: ConnectionState;
-    autoReconnect: boolean;
-    reconnectIntervalMs: number;
-    bucketName: string;
-    lastError?: any;
-}
-
-const envFlag = (value: string | undefined, fallback: boolean): boolean => {
-    if (value === undefined) {
-        return fallback;
-    }
-
-    return !['0', 'false', 'off', 'no'].includes(value.toLowerCase());
-};
-
-const envNumber = (value: string | undefined, fallback: number): number => {
-    const parsed = Number(value);
-
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-};
+import {envFlag, envNumber} from './env';
+import {ConnectionHealth, ConnectionSettings, ConnectionState, CouchsetArgs} from './types';
 
 /**
  * CouchbaseConnection class
