@@ -89,4 +89,29 @@ describe('Safe pagination', () => {
             },
         });
     });
+
+    it('throws pagination failures by default and can return empty fallbacks', async () => {
+        const error = new Error('pagination failed');
+        CouchbaseConnection.Instance.cluster = {
+            query: async () => {
+                throw error;
+            },
+        } as any;
+        const args = {
+            bucketName: 'test',
+            select: '*',
+            where: {where: {_type: {$eq: 'User'}}},
+            limit: 5,
+            page: 0,
+        };
+
+        try {
+            await Pagination(args);
+            throw new Error('expected pagination to reject');
+        } catch (caught) {
+            expect(caught).to.equal(error);
+        }
+
+        expect(await Pagination({...args, throwOnError: false})).to.deep.equal([]);
+    });
 });

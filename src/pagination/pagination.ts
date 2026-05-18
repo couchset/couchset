@@ -21,8 +21,6 @@ export const Pagination = async (args: PaginationArgs): Promise<any[]> => {
     try {
         const {query, parameters, selectAll} = buildPaginationQuery(args);
 
-        console.log('query', query);
-
         const {rows} = await cluster.query(query, {parameters});
 
         const completedRows = rows.map((r: any) => {
@@ -31,7 +29,10 @@ export const Pagination = async (args: PaginationArgs): Promise<any[]> => {
 
         return completedRows;
     } catch (error) {
-        console.error('error running pagination', error);
-        return [];
+        if (args.throwOnError === false) {
+            return [];
+        }
+
+        throw error;
     }
 };

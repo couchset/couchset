@@ -91,7 +91,7 @@ describe('Model safe query APIs', () => {
         expect(model.from('user')).to.equal('`test-bucket` AS user');
     });
 
-    it('keeps customQuery() tuple results for compatibility', async () => {
+    it('runs customQuery() with SDK parameters and tuple pagination metadata', async () => {
         const [rows, pagination] = await model.customQuery<{id: number}>({
             query: 'SELECT * FROM bucket',
             params: {limit: 2},
@@ -100,13 +100,33 @@ describe('Model safe query APIs', () => {
 
         expect(rows).to.deep.equal([{id: 1}, {id: 2}, {id: 3}]);
         expect(pagination).to.deep.equal({params: {limit: 2}, hasNext: true});
-        expect(calls[0].options).to.equal(undefined);
+        expect(calls[0].options).to.deep.equal({parameters: {limit: 2}});
     });
 
-    it('keeps customQuery() swallowing errors for compatibility', async () => {
+    it('rejects customQuery() failures by default', async () => {
+        const error = new Error('query failed');
         CouchbaseConnection.Instance.cluster = {
             query: async () => {
-                throw new Error('legacy failure');
+                throw error;
+            },
+        } as any;
+
+        try {
+            await model.customQuery<{id: number}>({
+                query: 'SELECT * FROM bucket',
+                params: {limit: 2},
+                limit: 2,
+            });
+            throw new Error('expected customQuery to reject');
+        } catch (caught) {
+            expect(caught).to.equal(error);
+        }
+    });
+
+    it('can return customQuery() fallbacks with throwOnError false', async () => {
+        CouchbaseConnection.Instance.cluster = {
+            query: async () => {
+                throw new Error('fallback failure');
             },
         } as any;
 
@@ -114,6 +134,7 @@ describe('Model safe query APIs', () => {
             query: 'SELECT * FROM bucket',
             params: {limit: 2},
             limit: 2,
+            throwOnError: false,
         });
 
         expect(rows).to.deep.equal([]);

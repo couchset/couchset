@@ -701,15 +701,19 @@ export class Model {
         where,
         orderBy,
         limit,
+        offset,
         page,
         customQuery = {},
+        throwOnError,
     }: {
         select?: any[] | string;
         where?: any;
         orderBy?: any;
         limit?: number;
+        offset?: number;
         page?: number;
         customQuery?: any; // can be $and or any other valid quries
+        throwOnError?: boolean;
     }): Promise<any[]> {
         return this.withConnection(async () => {
             // Where begins here
@@ -728,8 +732,10 @@ export class Model {
                 select,
                 where: {where: whereEx, ...customQuery},
                 limit,
+                offset,
                 page,
                 orderBy,
+                throwOnError,
             });
 
             return rows.map((r) => this.parse(r));
@@ -747,12 +753,14 @@ export class Model {
         params,
         limit,
         query,
+        throwOnError,
     }: {
         debug?: boolean;
         logger?: QueryLogger;
-        params: any;
+        params?: QueryParameters;
         limit: number;
         query: string;
+        throwOnError?: boolean;
     }): Promise<[T[], CustomQueryPagination]> {
         return this.withConnection(() =>
             CustomQuery<T>({
@@ -761,6 +769,7 @@ export class Model {
                 logger,
                 params,
                 query,
+                throwOnError,
             })
         );
     }
