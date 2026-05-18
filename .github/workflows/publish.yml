@@ -5,40 +5,59 @@ on:
     branches:
       - "master"
 
+permissions:
+  contents: read
+
 jobs:
   bump-version:
-    name: "publish"
+    name: "bump version"
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: "Checkout source code"
-        uses: "actions/checkout@v2"
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.ref }}
 
-      # Setup Node.js
       - name: "Setup Node.js"
-        uses: "actions/setup-node@v1"
+        uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: "24"
 
-      # Automated Version Bump
       - name: "Automated Version Bump"
-        uses: "phips28/gh-action-bump-version@master"
+        uses: "phips28/gh-action-bump-version@215e27a882516826c59df7f09da8c67d5f375cbd"
         with:
           tag-prefix: ""
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Install packages with yarn
-      - name: "Install"
-        run: npm install
+  publish:
+    name: "publish"
+    needs: bump-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
-      # Publish the package
-      - name: npm publish
-        run: |
-          npm config set //registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN
-          npm publish --access=public
+    steps:
+      - name: "Checkout source code"
+        uses: actions/checkout@v6
+        with:
+          ref: master
+
+      - name: "Setup Node.js"
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: "Install"
+        run: npm ci
+
+      - name: "Publishing to Npm registry"
+        run: npm publish --access=public
         env:
           CI: true
-          NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}

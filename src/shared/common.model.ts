@@ -18,11 +18,11 @@ export const createUpdate = async <T>(args: CreateUpdate): Promise<T | null> => 
     try {
         if (!isEmpty(id)) {
             // update
-            await model.updateById(id, data);
+            await model.replaceById(id, data);
             return data;
         }
         // create
-        const createdItem = await model.create(data);
+        const createdItem = await model.insert(data);
         return createdItem;
     } catch (error) {
         console.error(`error creating for ${model.collectionName}`, error);
