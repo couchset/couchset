@@ -1,4 +1,4 @@
-import CouchbaseConnection, {CouchsetArgs} from './connection';
+import CouchbaseConnection, {ConnectionHealth, CouchsetArgs} from './connection';
 import {EnsureIndexOptions, Model} from './model';
 
 export * from './model';
@@ -23,7 +23,29 @@ export const ensureIndexes = async (options?: EnsureIndexOptions): Promise<strin
     return Model.ensureIndexes(options);
 };
 
-(couchset as any).ensureIndexes = ensureIndexes;
+export const ready = async (): Promise<CouchbaseConnection> => {
+    return CouchbaseConnection.Instance.ready();
+};
+
+export const ping = async (): Promise<any> => {
+    return CouchbaseConnection.Instance.ping();
+};
+
+export const health = (): ConnectionHealth => {
+    return CouchbaseConnection.Instance.health();
+};
+
+export const shutdown = async (): Promise<void> => {
+    return CouchbaseConnection.Instance.shutdown();
+};
+
+Object.assign(couchset as any, {
+    ensureIndexes,
+    health,
+    ping,
+    ready,
+    shutdown,
+});
 
 /**
  * Main function to start CouchSet
