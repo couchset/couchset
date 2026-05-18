@@ -1,0 +1,147 @@
+# CouchSet Beta Migration
+
+The beta release makes the main `couchset` import the modern implementation. The previous behavior stays available from `couchset/legacy`.
+
+```ts
+// Modern path
+import {couchset, Model} from 'couchset';
+
+// Frozen compatibility path
+import {couchset, Model} from 'couchset/legacy';
+```
+
+Use `couchset/legacy` when an application depends on old pagination or custom query behavior. New work should use the main `couchset` path.
+
+## Connection Lifecycle
+
+Models can be constructed before the Couchbase connection is ready. Model methods wait for the shared connection before touching the bucket or collection.
+
+```ts
+import {couchset, Model, ready, health, ping, shutdown} from 'couchset';
+
+const users = new Model('User');
+
+await couchset({
+    connectionString: process.env.COUCHBASE_URL || 'couchbase://localhost',
+    username: process.env.COUCHBASE_USERNAME || 'admin',
+    password: process.env.COUCHBASE_PASSWORD || '1234',
+    bucketName: process.env.COUCHBASE_BUCKET || 'dev',
+});
+
+await ready();
+await ping();
+console.log(health());
+
+await couchset.ready();
+
+const user = await users.create({userId: 'ceddy'});
+
+await shutdown();
+```
+
+Reconnect is enabled by default. It can be controlled with connection args or environment variables.
+
+```ts
+await couchset({
+    connectionString: 'couchbase://localhost',
+    username: 'admin',
+    password: '1234',
+    bucketName: 'dev',
+    autoReconnect: true,
+    reconnectIntervalMs: 5000,
+});
+```
+
+Environment flags:
+
+- `COUCHSET_RECONNECT`: defaults to enabled. Use `false`, `0`, or `no` to disable.
+- `COUCHSET_RECONNECT_INTERVAL_MS`: reconnect and health-check interval in milliseconds. Defaults to `5000`.
+
+## Query Behavior
+
+Modern query helpers throw by default. This makes production failures visible and keeps silent fallbacks explicit.
+
+```ts
+const rows = await users.findMany({
+    where: {userId: {$eq: 'ceddy'}},
+});
+
+const page = await users.page({
+    where: {userId: {$eq: 'ceddy'}},
+    limit: 25,
+    page: 0,
+});
+
+const [customRows] = await users.customQuery({
+    query: `SELECT * FROM ${users.bucket()} WHERE userId=$userId LIMIT $limit`,
+    params: {userId: 'ceddy', limit: 25},
+    limit: 25,
+});
+```
+
+If a caller intentionally wants the old empty-result fallback, pass `throwOnError: false`.
+
+```ts
+const rows = await users.pagination({
+    where: {userId: {$eq: 'ceddy'}},
+    limit: 25,
+    page: 0,
+    throwOnError: false,
+});
+
+const [customRows] = await users.customQuery({
+    query: `SELECT * FROM ${users.bucket()} WHERE userId=$userId LIMIT $limit`,
+    params: {userId: 'ceddy', limit: 25},
+    limit: 25,
+    throwOnError: false,
+});
+```
+
+## Safer SQL++ Helpers
+
+Use the model keyspace helpers instead of hardcoding bucket names.
+
+```ts
+users.bucket(); // `dev`
+users.from('u'); // `dev` AS u
+```
+
+For scoped collections, `from()` includes the full keyspace.
+
+```ts
+const audit = new Model('AuditEvent', {
+    scope: 'app',
+    collection: 'events',
+});
+
+audit.from('event'); // `dev`.`app`.`events` AS event
+```
+
+## New Model APIs
+
+The modern path includes safer read, write, document, TTL, include, index, and time series helpers.
+
+```ts
+await users.insert({id: 'user::1', userId: 'ceddy'});
+await users.patchById('user::1', {$set: {email: 'ceddy@example.com'}});
+await users.softDeleteById('user::1');
+await users.restoreById('user::1');
+
+const exists = await users.exists({where: {userId: {$eq: 'ceddy'}}});
+const count = await users.count({where: {userId: {$eq: 'ceddy'}}});
+```
+
+Index declarations can live on the model and be created at app boot.
+
+```ts
+const users = new Model('User', {
+    indexes: [
+        {
+            name: 'idx_user_userId',
+            fields: ['userId'],
+        },
+    ],
+});
+
+await couchset.ensureIndexes();
+```

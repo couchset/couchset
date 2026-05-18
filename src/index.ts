@@ -9,16 +9,6 @@ export * from './pagination';
 export * from './shared';
 export * from './timeseries';
 
-/**
- * Main function to start CouchSet
- * @param @interface CouchsetArgs
- */
-export const couchset = async (args: CouchsetArgs): Promise<boolean> => {
-    const couch = CouchbaseConnection.Instance;
-    await couch.init(args);
-    return Promise.resolve(true);
-};
-
 export const ensureIndexes = async (options?: EnsureIndexOptions): Promise<string[]> => {
     return Model.ensureIndexes(options);
 };
@@ -39,13 +29,32 @@ export const shutdown = async (): Promise<void> => {
     return CouchbaseConnection.Instance.shutdown();
 };
 
-Object.assign(couchset as any, {
+export interface CouchsetStarter {
+    (args: CouchsetArgs): Promise<boolean>;
+    ensureIndexes: typeof ensureIndexes;
+    health: typeof health;
+    ping: typeof ping;
+    ready: typeof ready;
+    shutdown: typeof shutdown;
+}
+
+/**
+ * Main function to start CouchSet
+ * @param @interface CouchsetArgs
+ */
+const startCouchset = async (args: CouchsetArgs): Promise<boolean> => {
+    const couch = CouchbaseConnection.Instance;
+    await couch.init(args);
+    return Promise.resolve(true);
+};
+
+export const couchset = Object.assign(startCouchset, {
     ensureIndexes,
     health,
     ping,
     ready,
     shutdown,
-});
+}) as CouchsetStarter;
 
 /**
  * Main function to start CouchSet

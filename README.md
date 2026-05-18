@@ -22,6 +22,7 @@
 CouchSet is a Couchbase ORM & Automatic GraphQL API code generator (Resolver/Queries) tool
 
 - [Install](#install)
+- [Beta migration](./docs/beta-migration.md)
 - [License](#license)
 
 ## 1. Install
