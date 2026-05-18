@@ -41,7 +41,7 @@ export const ttlToSeconds = (ttl: string | number, strictTtl?: boolean): number 
     return parseTtlString(ttl, strictTtl);
 };
 
-export const applyTtlOptions = <T extends {expiry?: number}>(
+export const applyTtlOptions = <T extends {expiry?: number | Date}>(
     options?: T & TtlOptions
 ): T | undefined => {
     if (!options) {
