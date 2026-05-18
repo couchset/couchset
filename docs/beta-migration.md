@@ -69,6 +69,17 @@ Environment flags:
 - `COUCHSET_RECONNECT`: defaults to enabled. Use `false`, `0`, or `no` to disable.
 - `COUCHSET_RECONNECT_INTERVAL_MS`: reconnect and health-check interval in milliseconds. Defaults to `5000`.
 
+`couchset/next` also exports env-based starter helpers:
+
+```ts
+import {startCouchbase, startCouchbaseServerless} from 'couchset/next';
+
+await startCouchbase();
+await startCouchbaseServerless();
+```
+
+The starters read `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, and `COUCHBASE_PROXY`, and accept `CouchsetArgs` overrides.
+
 ## Query Behavior
 
 Modern query helpers throw by default. This makes production failures visible and keeps silent fallbacks explicit.

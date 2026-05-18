@@ -136,6 +136,17 @@ Reconnect is enabled by default. Environment flags:
 - `COUCHSET_RECONNECT`: use `false`, `0`, or `no` to disable reconnect.
 - `COUCHSET_RECONNECT_INTERVAL_MS`: reconnect and health-check interval in milliseconds. Default is `5000`.
 
+The modern entrypoint also exports app starter helpers that read Couchbase credentials from env:
+
+```ts
+import {startCouchbase, startCouchbaseServerless} from 'couchset/next';
+
+await startCouchbase();
+await startCouchbaseServerless();
+```
+
+The starters read `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, and `COUCHBASE_PROXY`. You can pass any `CouchsetArgs` field as an override.
+
 ## Models
 
 ```ts

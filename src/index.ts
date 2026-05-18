@@ -3,6 +3,7 @@ import {EnsureIndexOptions, Model} from './model';
 
 export * from './model';
 export * from './connection';
+export * from './database';
 export * from './query';
 export * from './search';
 export * from './pagination';
