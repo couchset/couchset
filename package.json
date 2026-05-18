@@ -6,6 +6,7 @@
     "main": "dist/legacy/index.js",
     "types": "dist/legacy/index.d.ts",
     "files": [
+        "CHANGELOG.md",
         "docs/",
         "dist/",
         "legacy/",

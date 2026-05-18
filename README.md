@@ -20,6 +20,7 @@ CouchSet is a Couchbase model layer for TypeScript and Node.js. The default `cou
 - [Queries](#queries)
 - [Gradual Migration](#gradual-migration)
 - [Migration Notes](./docs/beta-migration.md)
+- [Changelog](./CHANGELOG.md)
 - [License](#license)
 
 ## Install
