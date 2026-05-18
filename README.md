@@ -8,16 +8,17 @@
   <img width="500px" src="./docs/couchset.png"></img>
 </div>
 
-CouchSet is a Couchbase model layer for TypeScript and Node.js. The main `couchset` entrypoint is the modern API; the previous API is available from `couchset/legacy`.
+CouchSet is a Couchbase model layer for TypeScript and Node.js. The default `couchset` entrypoint keeps the legacy API for safe upgrades; the modern API is available from `couchset/next`.
 
 - [Install](#install)
-- [Quick Start](#quick-start)
+- [Legacy Default](#legacy-default)
+- [Modern API](#modern-api)
 - [Connection Lifecycle](#connection-lifecycle)
 - [Models](#models)
 - [Reads](#reads)
 - [Writes](#writes)
 - [Queries](#queries)
-- [Legacy Import](#legacy-import)
+- [Gradual Migration](#gradual-migration)
 - [Migration Notes](./docs/beta-migration.md)
 - [License](#license)
 
@@ -27,10 +28,38 @@ CouchSet is a Couchbase model layer for TypeScript and Node.js. The main `couchs
 npm i couchset --save
 ```
 
-## Quick Start
+## Legacy Default
+
+Existing projects can keep importing from `couchset` and continue using the old model methods while gradually migrating.
 
 ```ts
 import {couchset, Model} from 'couchset';
+
+await couchset({
+    connectionString: process.env.COUCHBASE_URL || 'couchbase://localhost',
+    username: process.env.COUCHBASE_USERNAME || 'admin',
+    password: process.env.COUCHBASE_PASSWORD || '1234',
+    bucketName: process.env.COUCHBASE_BUCKET || 'dev',
+});
+
+const users = new Model('User', {schema: {createdAt: 'date'}});
+
+const created = await users.create({
+    userId: 'ceddy',
+    email: 'ceddy@example.com',
+});
+
+const found = await users.findById(created.id);
+await users.updateById(created.id, {...found, email: 'new@example.com'});
+await users.delete(created.id);
+```
+
+## Modern API
+
+New code can opt into the modern API with `couchset/next`.
+
+```ts
+import {couchset, Model} from 'couchset/next';
 
 type User = {
     userId: string;
@@ -84,7 +113,7 @@ await users.deleteById(created.id, {hard: true});
 Models can be declared before connecting. Model operations wait for the shared connection before binding to the Couchbase bucket and collection.
 
 ```ts
-import {couchset, health, ping, ready, shutdown} from 'couchset';
+import {couchset, health, ping, ready, shutdown} from 'couchset/next';
 
 await couchset({
     connectionString: 'couchbase://localhost',
@@ -271,7 +300,7 @@ const rows = await posts.findMany({
 ## Time Series
 
 ```ts
-import {TimeSeriesModel} from 'couchset';
+import {TimeSeriesModel} from 'couchset/next';
 
 const metrics = new TimeSeriesModel('Metric', {
     keyField: 'deviceId',
@@ -285,21 +314,21 @@ await metrics.appendChunk('device-1', [
 ]);
 ```
 
-## Legacy Import
+## Gradual Migration
 
-Use `couchset/legacy` for applications that still depend on the old model names such as `create`, `findById`, `updateById`, `delete`, `pagination`, or `customQuery`.
+Use `couchset` for old code and `couchset/next` for new code. Both model APIs share the same connection singleton, reconnect loop, and health state, so you can migrate one model or file at a time without opening a second Couchbase cluster connection.
 
 ```ts
 import {couchset, Model} from 'couchset';
-import {Model as LegacyModel} from 'couchset/legacy';
+import {Model as NextModel} from 'couchset/next';
 
 await couchset(args);
 
-const users = new Model('User');
-const legacyUsers = new LegacyModel('User');
+const legacyUsers = new Model('User');
+const nextUsers = new NextModel('User');
 ```
 
-The modern and legacy model APIs share the same connection singleton, reconnect loop, and health state. You can migrate one model at a time without opening a second Couchbase cluster connection.
+`couchset/legacy` remains available as an explicit alias for the default legacy API.
 
 Modern replacements:
 

@@ -1,27 +1,27 @@
 # CouchSet Beta Migration
 
-The beta release makes the main `couchset` import the modern implementation. The previous behavior stays available from `couchset/legacy`.
+The beta release keeps the main `couchset` import on the legacy implementation so existing projects can upgrade safely. The modern implementation is available from `couchset/next`.
 
 ```ts
-// Modern path
-import {couchset, Model} from 'couchset';
+import {Model as LegacyModel} from 'couchset';
+import {Model as NextModel} from 'couchset/next';
 
-// Frozen compatibility path
-import {couchset, Model} from 'couchset/legacy';
+const legacyUsers = new LegacyModel('User');
+const nextUsers = new NextModel('User');
 ```
 
-Use `couchset/legacy` when an application depends on old pagination or custom query behavior. New work should use the main `couchset` path.
+Use `couchset` when an application depends on old pagination or custom query behavior. New work should use `couchset/next`.
 
 Modern and legacy models share the same connection singleton. Initialize CouchSet once and use both model APIs side by side while migrating.
 
 ```ts
 import {couchset, Model} from 'couchset';
-import {Model as LegacyModel} from 'couchset/legacy';
+import {Model as NextModel} from 'couchset/next';
 
 await couchset(args);
 
-const users = new Model('User');
-const legacyUsers = new LegacyModel('User');
+const legacyUsers = new Model('User');
+const nextUsers = new NextModel('User');
 ```
 
 ## Connection Lifecycle
@@ -29,7 +29,7 @@ const legacyUsers = new LegacyModel('User');
 Models can be constructed before the Couchbase connection is ready. Model methods wait for the shared connection before touching the bucket or collection.
 
 ```ts
-import {couchset, Model, ready, health, ping, shutdown} from 'couchset';
+import {couchset, Model, ready, health, ping, shutdown} from 'couchset/next';
 
 const users = new Model('User');
 
@@ -137,7 +137,7 @@ const count = await users.count({where: {userId: {$eq: 'ceddy'}}});
 
 ## Removed Modern Model Aliases
 
-The old method names now belong to `couchset/legacy`.
+The old method names belong to the default `couchset` entrypoint and the explicit `couchset/legacy` alias.
 
 | Old method | Modern method |
 | --- | --- |

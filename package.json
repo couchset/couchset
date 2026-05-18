@@ -3,12 +3,13 @@
     "version": "0.2.7",
     "description": "Couchbase ORM",
     "private": false,
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "dist/legacy/index.js",
+    "types": "dist/legacy/index.d.ts",
     "files": [
         "docs/",
         "dist/",
         "legacy/",
+        "next/",
         "register/",
         "LICENSE"
     ],
