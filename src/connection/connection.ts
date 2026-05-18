@@ -279,37 +279,8 @@ export class CouchbaseConnection implements CouchsetArgs {
     /**
      * start serverless start
      */
-    public initServerless = (args: CouchsetArgs): CouchbaseConnection => {
-        const settings = this.normalizeArgs(args);
-        this.configureReconnect(args);
-
-        if (this.isConnected() && this.sameSettings(settings)) {
-            return this;
-        }
-
-        if (this.isConnected() && !args.force) {
-            throw this.settingsError();
-        }
-
-        if (args.force) {
-            this.shutdown().catch(() => undefined);
-            this.configureReconnect(args);
-        }
-
-        this.manuallyClosed = false;
-        this.assignSettings(settings);
-
-        const cluster = new couchbase.Cluster(
-            settings.connectionString,
-            this.connectionOptions(settings)
-        );
-
-        this.cluster = cluster as any;
-        this.bucket = this.cluster.bucket(settings.bucketName);
-        this.connectionState = 'connected';
-        this.scheduleHealthCheck();
-
-        return this;
+    public initServerless = async (args: CouchsetArgs): Promise<CouchbaseConnection> => {
+        return this.init(args);
     };
 
     /**

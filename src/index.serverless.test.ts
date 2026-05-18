@@ -1,22 +1,27 @@
 import 'reflect-metadata';
 import 'mocha';
-import { expect } from 'chai';
-import { couchsetServerless, Model, QueryBuilder } from './index';
+import 'dotenv/config';
+import {expect} from 'chai';
 
-before((done) => {
-    couchsetServerless({
-        connectionString: 'couchbase://localhost',
-        username: 'admin',
-        password: '1234567',
-        bucketName: 'stq',
-    })
-    done();
+import {couchsetServerless, Model, QueryBuilder} from './index';
+
+const cbURL = process.env.COUCHBASE_URL || 'couchbase://localhost';
+const cbBucket = process.env.COUCHBASE_BUCKET || 'dev';
+const cbUsername = process.env.COUCHBASE_USERNAME || 'admin';
+const cbPw = process.env.COUCHBASE_PASSWORD || '1234';
+
+before(async () => {
+    await couchsetServerless({
+        connectionString: cbURL,
+        username: cbUsername,
+        password: cbPw,
+        bucketName: cbBucket,
+    });
 });
 
 let sampleData: any = null;
 
-
-const model = new Model('User', { schema: { createdAt: 'date' } });
+const model = new Model('User', {schema: {createdAt: 'date'}});
 
 describe('CouchSet', () => {
     it('should insert into couchbase', async () => {
@@ -43,8 +48,11 @@ describe('CouchSet', () => {
     });
 
     it('should update into couchbase', async () => {
-        const someValueupdate = "some update value"
-        const updatedData = await model.updateById(sampleData.id, { ...sampleData, someValue: someValueupdate });
+        const someValueupdate = 'some update value';
+        const updatedData = await model.updateById(sampleData.id, {
+            ...sampleData,
+            someValue: someValueupdate,
+        });
         expect(updatedData.id).to.be.equal(sampleData.id);
         expect(updatedData.someValue).to.be.equal(someValueupdate);
     });
@@ -53,8 +61,8 @@ describe('CouchSet', () => {
         const paginationData = await model.pagination({
             select: ['id', 'password', 'createdAt', 'email', 'phone', 'fullname'],
             where: {
-                userId: { $eq: 'ceddy' },
-                $or: [{ userId: { $eq: 'ceddy' } }, { phone: 10 }],
+                userId: {$eq: 'ceddy'},
+                $or: [{userId: {$eq: 'ceddy'}}, {phone: 10}],
             },
             limit: 100,
             page: 0,
@@ -68,8 +76,8 @@ describe('CouchSet', () => {
         const paginationData = await model.pagination({
             select: '*',
             where: {
-                userId: { $eq: 'ceddy' },
-                $or: [{ userId: { $eq: 'ceddy' } }, { phone: 10 }],
+                userId: {$eq: 'ceddy'},
+                $or: [{userId: {$eq: 'ceddy'}}, {phone: 10}],
             },
             limit: 100,
             page: 0,
@@ -80,8 +88,7 @@ describe('CouchSet', () => {
     });
 
     it('should create query', async () => {
-        const dbName = 'stq';
-        const query = new QueryBuilder({}, dbName).select('*').build();
+        const query = new QueryBuilder({}, cbBucket).select('*').build();
 
         console.log('query is', query);
 

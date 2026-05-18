@@ -60,9 +60,9 @@ export const couchset = Object.assign(startCouchset, {
  * Main function to start CouchSet
  * @param @interface CouchsetArgs
  */
-export const couchsetServerless = (args: CouchsetArgs): Promise<boolean> => {
+export const couchsetServerless = async (args: CouchsetArgs): Promise<boolean> => {
     const couch = CouchbaseConnection.Instance;
-    couch.initServerless(args);
+    await couch.initServerless(args);
     return Promise.resolve(true);
 };
 
