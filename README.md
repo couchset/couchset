@@ -16,6 +16,7 @@ CouchSet is a Couchbase model layer for TypeScript and Node.js. The default `cou
 - [Connection Lifecycle](#connection-lifecycle)
 - [Models](#models)
 - [Reads](#reads)
+- [Document Modeling](./docs/document-modeling.md)
 - [Writes](#writes)
 - [Queries](#queries)
 - [Gradual Migration](#gradual-migration)
@@ -170,6 +171,10 @@ users.bucket(); // `dev`
 users.keyspace(); // `dev` or default:`dev`.`scope`.`collection`
 users.from('u'); // `dev` AS u
 ```
+
+For large objects, keep list metadata and heavy payloads in separate models.
+See [Document Modeling](./docs/document-modeling.md) for the recommended read
+shape.
 
 ## Reads
 
