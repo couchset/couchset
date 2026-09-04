@@ -78,7 +78,7 @@ await startCouchbase();
 await startCouchbaseServerless();
 ```
 
-The starters read `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, and `COUCHBASE_PROXY`, and accept `CouchsetArgs` overrides.
+The starters can instead read one `DB_URL` such as `couchbase://user:password@localhost/bucket` (or `couchbases://` for TLS). It takes precedence over `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, and `COUCHBASE_PASSWORD`; `COUCHBASE_PROXY` and explicit `CouchsetArgs` overrides remain supported.
 
 ## Query Behavior
 

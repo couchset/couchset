@@ -233,7 +233,15 @@ await startCouchbase();
 await startCouchbaseServerless();
 ```
 
-The starters read `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, and `COUCHBASE_PROXY`. You can pass any `CouchsetArgs` field as an override.
+The starters accept one PostgreSQL-style `DB_URL` in place of the four connection settings. It takes precedence over `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, and `COUCHBASE_PASSWORD`; explicit `startCouchbase({...})` options still take precedence over either environment form.
+
+```bash
+DB_URL=couchbase://user:password@localhost/bucket
+DB_URL=couchbase://user:password@localhost:11210/bucket
+DB_URL=couchbases://user:password@cb.example.com/bucket
+```
+
+Use `couchbases://` for TLS. Percent-encode reserved characters in usernames, passwords, and bucket names (for example, `p%40ss` for `p@ss`). `COUCHBASE_PROXY` remains available as a separate optional setting.
 
 ## Models
 

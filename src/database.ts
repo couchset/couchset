@@ -12,6 +12,62 @@ const envValue = (key: string, fallback = ''): string => {
     return value === undefined ? fallback : value;
 };
 
+const databaseUrlError = (reason: string): Error =>
+    new Error(`DB_URL must use couchbase:// or couchbases://user:password@host/bucket: ${reason}`);
+
+const decodeDatabaseUrlComponent = (value: string, label: string): string => {
+    try {
+        return decodeURIComponent(value);
+    } catch (_error) {
+        throw databaseUrlError(`${label} contains invalid percent-encoding`);
+    }
+};
+
+/**
+ * Convert a PostgreSQL-style DB_URL into Couchbase SDK connection settings.
+ * The bucket lives in the URL path; it is not part of Couchbase's connection
+ * string, which contains only the scheme, host, optional port, and options.
+ */
+export const parseDatabaseUrl = (
+    value: string
+): Pick<CouchsetArgs, 'bucketName' | 'connectionString' | 'password' | 'username'> => {
+    let url: URL;
+
+    try {
+        url = new URL(value);
+    } catch (_error) {
+        throw databaseUrlError('the value is not a valid URL');
+    }
+
+    if (url.protocol !== 'couchbase:' && url.protocol !== 'couchbases:') {
+        throw databaseUrlError(`unsupported protocol ${url.protocol || '(missing)'}`);
+    }
+    if (!url.hostname) {
+        throw databaseUrlError('a host is required');
+    }
+    if (!url.username || !url.password) {
+        throw databaseUrlError('a username and password are required');
+    }
+    if (url.hash) {
+        throw databaseUrlError('fragments are not supported');
+    }
+
+    const bucketName = decodeDatabaseUrlComponent(
+        url.pathname.replace(/^\//, ''),
+        'the bucket name'
+    );
+    if (!bucketName || bucketName.indexOf('/') !== -1) {
+        throw databaseUrlError('the path must contain exactly one bucket name');
+    }
+
+    return {
+        bucketName,
+        connectionString: `${url.protocol}//${url.host}${url.search}`,
+        password: decodeDatabaseUrlComponent(url.password, 'the password'),
+        username: decodeDatabaseUrlComponent(url.username, 'the username'),
+    };
+};
+
 const maskPassword = (password: string): string => {
     return password ? 'xxxxxx' : 'empty';
 };
@@ -24,6 +80,7 @@ const splitStartOptions = (options: StartCouchbaseOptions = {}) => {
 
 export const getConnectionOptions = (overrides: Partial<CouchsetArgs> = {}): CouchsetArgs => {
     const proxy = envValue('COUCHBASE_PROXY');
+    const databaseUrl = envValue('DB_URL');
     const options: CouchsetArgs = {
         bucketName: envValue('COUCHBASE_BUCKET', 'dev'),
         connectionString: envValue('COUCHBASE_URL', 'couchbase://localhost'),
@@ -37,6 +94,7 @@ export const getConnectionOptions = (overrides: Partial<CouchsetArgs> = {}): Cou
 
     return {
         ...options,
+        ...(databaseUrl ? parseDatabaseUrl(databaseUrl) : {}),
         ...overrides,
     };
 };
