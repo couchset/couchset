@@ -9,6 +9,8 @@ export * from './search';
 export * from './pagination';
 export * from './shared';
 export * from './timeseries';
+/** Additive client-owned APIs exposed by couchset/next (and this modern entrypoint). */
+export * from './next';
 
 export const ensureIndexes = async (options?: EnsureIndexOptions): Promise<string[]> => {
     return Model.ensureIndexes(options);

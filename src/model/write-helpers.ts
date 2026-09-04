@@ -20,6 +20,8 @@ export interface ModelWriteContext {
     collectionName: string;
     scope: string;
     parse: <T>(data: T) => T;
+    serialize?: <T>(data: T) => T;
+    serializeField?: (path: string, value: any) => any;
     validateCreate?: ValidationHook;
     validateReplace?: ValidationHook;
 }
@@ -41,7 +43,7 @@ export type UpsertWriteOptions = UpsertOptions & TtlOptions;
 
 const now = (): Date => new Date();
 
-const modelDocument = <T>(
+export const modelDocument = <T>(
     context: ModelWriteContext,
     data: T,
     createdAt?: Date
@@ -59,7 +61,7 @@ const modelDocument = <T>(
     } as T & AutoModelFields;
 };
 
-const replacementDocument = <T>(
+export const replacementDocument = <T>(
     context: ModelWriteContext,
     id: string,
     data: T,
@@ -87,17 +89,41 @@ const unsetPaths = (value?: string[] | Record<string, any>): string[] => {
     return Array.isArray(value) ? value : Object.keys(value);
 };
 
+/** Prepare an insert using the same metadata, validation, and codec pipeline as Model.insert. */
+export const prepareInsertDocument = async <T>(
+    context: ModelWriteContext,
+    data: T
+): Promise<T & AutoModelFields> => {
+    const validated = await applyValidation(
+        modelDocument<T>(context, data),
+        context.validateCreate
+    );
+    return context.serialize ? context.serialize(validated) : validated;
+};
+
+/** Prepare a replace using the same metadata, validation, and codec pipeline as Model.replaceById. */
+export const prepareReplacementDocument = async <T>(
+    context: ModelWriteContext,
+    id: string,
+    data: T,
+    options?: UpdateOptions
+): Promise<T & AutoModelFields> => {
+    const validated = await applyValidation(
+        replacementDocument<T>(context, id, data, options),
+        context.validateReplace
+    );
+    return context.serialize ? context.serialize(validated) : validated;
+};
+
 export const insert = async <T>(
     context: ModelWriteContext,
     data: T,
     options?: InsertWriteOptions
 ): Promise<T & AutoModelFields> => {
-    const document = modelDocument<T>(context, data);
-    const validated = await applyValidation(document, context.validateCreate);
+    const stored = await prepareInsertDocument<T>(context, data);
+    await context.collection.insert(stored.id, stored, applyTtlOptions(options));
 
-    await context.collection.insert(validated.id, validated, applyTtlOptions(options));
-
-    return context.parse<T & AutoModelFields>(validated);
+    return context.parse<T & AutoModelFields>(stored);
 };
 
 export const upsert = async <T>(
@@ -105,12 +131,10 @@ export const upsert = async <T>(
     data: T,
     options?: UpsertWriteOptions
 ): Promise<T & AutoModelFields> => {
-    const document = modelDocument<T>(context, data);
-    const validated = await applyValidation(document, context.validateCreate);
+    const stored = await prepareInsertDocument<T>(context, data);
+    await context.collection.upsert(stored.id, stored, applyTtlOptions(options));
 
-    await context.collection.upsert(validated.id, validated, applyTtlOptions(options));
-
-    return context.parse<T & AutoModelFields>(validated);
+    return context.parse<T & AutoModelFields>(stored);
 };
 
 export const replaceById = async <T>(
@@ -120,12 +144,10 @@ export const replaceById = async <T>(
     options?: UpdateOptions
 ): Promise<T & AutoModelFields> => {
     const {silent, ...replaceOptions} = options || {};
-    const document = replacementDocument<T>(context, id, data, {silent});
-    const validated = await applyValidation(document, context.validateReplace);
+    const stored = await prepareReplacementDocument<T>(context, id, data, {silent});
+    await context.collection.replace(id, stored, replaceOptions as ReplaceOptions);
 
-    await context.collection.replace(id, validated, replaceOptions as ReplaceOptions);
-
-    return context.parse<T & AutoModelFields>(validated);
+    return context.parse<T & AutoModelFields>(stored);
 };
 
 export const mutateById = async (
@@ -149,7 +171,12 @@ export const patchById = async <T>(
 ): Promise<T & AutoModelFields> => {
     const specs = [
         ...Object.keys(patch.$set || {}).map((path) =>
-            couchbase.MutateInSpec.upsert(path, patch.$set[path])
+            couchbase.MutateInSpec.upsert(
+                path,
+                context.serializeField
+                    ? context.serializeField(path, patch.$set[path])
+                    : patch.$set[path]
+            )
         ),
         ...unsetPaths(patch.$unset).map((path) => couchbase.MutateInSpec.remove(path)),
         ...Object.keys(patch.$inc || {}).map((path) =>

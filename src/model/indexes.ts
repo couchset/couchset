@@ -8,6 +8,8 @@ export type IndexField = string | Record<string, SortType>;
 
 export interface ModelIndexDefinition {
     name: string;
+    /** Logical predecessor for an explicit, safe replacement rollout. */
+    replaces?: string;
     fields?: IndexField[];
     where?: LogicalWhereExpr;
     deferred?: boolean;

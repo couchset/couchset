@@ -10,9 +10,12 @@
 
 CouchSet is a Couchbase model layer for TypeScript and Node.js. The default `couchset` entrypoint keeps the legacy API for safe upgrades; the modern API is available from `couchset/next`.
 
+The additive client-owned primitives—typed definitions, explicit provisioning, transaction-bound models, CAS helpers, and safe index plans—are documented in [Next primitives](./docs/next-primitives.md).
+
 - [Install](#install)
 - [Legacy Default](#legacy-default)
 - [Modern API](#modern-api)
+- [Next primitives](./docs/next-primitives.md)
 - [Connection Lifecycle](#connection-lifecycle)
 - [Models](#models)
 - [Reads](#reads)

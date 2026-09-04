@@ -1,5 +1,6 @@
 import type {
     Collection,
+    Cluster,
     GetOptions,
     MutateInOptions,
     RemoveOptions,
@@ -32,6 +33,8 @@ import {
     insert as insertDocument,
     mutateById as mutateDocumentById,
     patchById as patchDocumentById,
+    prepareInsertDocument,
+    prepareReplacementDocument,
     replaceById as replaceDocumentById,
     upsert as upsertDocument,
 } from './write-helpers';
@@ -51,6 +54,25 @@ import {
 } from './indexes';
 import type {ParseHook, ValidationHook} from './validation';
 import {parseDateFields, schemaFromDateFields} from './validation';
+
+/** A small connection surface used by client-bound models. */
+export interface ModelConnection {
+    bucket?: any;
+    bucketName?: string;
+    cluster: Cluster;
+    getBucket(): string;
+    getCollection(scopeName?: string, collectionName?: string): Collection;
+    isConnected(): boolean;
+    ready(): Promise<any>;
+    shouldReconnect(error: any): boolean;
+    markDisconnected(error: any): void;
+}
+
+/** Converts a field between the application's value and Couchbase JSON. */
+export interface FieldCodec<T = any, TDatabase = any> {
+    toDatabase(value: T): TDatabase;
+    fromDatabase(value: TDatabase): T;
+}
 
 export type {ModelPageResult, ModelReadArgs} from './read-helpers';
 export type {
@@ -94,8 +116,15 @@ export interface ModalOptions {
     validateReplace?: ValidationHook;
     parse?: ParseHook;
     dateFields?: string[];
+    /**
+     * Explicit field transforms. A field cannot also be a dateFields/schema date
+     * transform, since that makes the parse order ambiguous.
+     */
+    codecs?: Record<string, FieldCodec<any, any>>;
     indexes?: ModelIndexDefinition[];
 }
+
+export type ConsumeOnceResult = {status: 'consumed'} | {status: 'missing'} | {status: 'conflict'};
 
 interface CollectionTarget {
     scopeName?: string;
@@ -117,15 +146,18 @@ export class Model {
     private validateReplaceHook?: ValidationHook;
     private parseHook?: ParseHook;
     private dateFields?: string[];
+    private codecs: Record<string, FieldCodec<any, any>> = {};
+    private readonly connection?: ModelConnection;
     private indexes: ModelIndexDefinition[] = [];
     schema: Record<string, SchemaTypes> = {
         createdAt: 'date',
         updatedAt: 'date',
     };
 
-    constructor(name: string, options?: ModalOptions) {
+    constructor(name: string, options?: ModalOptions, connection?: ModelConnection) {
         // this.collection = CouchbaseConnection.Instance.getCollection();
         this.collectionName = name;
+        this.connection = connection;
         if (options) {
             const hasScope = Object.prototype.hasOwnProperty.call(options, 'scope');
             const hasCollection = Object.prototype.hasOwnProperty.call(options, 'collection');
@@ -140,6 +172,15 @@ export class Model {
             this.validateReplaceHook = options.validateReplace;
             this.parseHook = options.parse;
             this.dateFields = options.dateFields;
+            this.codecs = options.codecs || {};
+            const dateFields = new Set(options.dateFields || []);
+            Object.keys(this.codecs).forEach((field) => {
+                if (dateFields.has(field) || options.schema?.[field] === 'date') {
+                    throw new Error(
+                        `codec for ${field} conflicts with dateFields or schema date; use one transform`
+                    );
+                }
+            });
             this.indexes = options.indexes || [];
             this.schema = {
                 ...((options && options.schema) || {}),
@@ -149,7 +190,9 @@ export class Model {
             };
         }
 
-        if (this.indexes.length) {
+        // Legacy models participate in the singleton registry. Client-bound
+        // models are registered only by their owning CouchsetClient.
+        if (this.indexes.length && !this.connection) {
             Model.registeredModels.push(this);
         }
     }
@@ -189,9 +232,9 @@ export class Model {
      */
     private fresh(): void {
         // if couchbase connection has been init
-        if (CouchbaseConnection.Instance.isConnected()) {
+        if (this.couchbaseConnection().isConnected()) {
             const target = this.collectionTarget();
-            this.collection = CouchbaseConnection.Instance.getCollection(
+            this.collection = this.couchbaseConnection().getCollection(
                 target.scopeName,
                 target.collectionName
             );
@@ -232,7 +275,7 @@ export class Model {
      * getCollection
      */
     private getBucketName(): string {
-        const bucketName = CouchbaseConnection.Instance?.getBucket();
+        const bucketName = this.couchbaseConnection().getBucket();
 
         if (!bucketName) {
             throw new Error('couchset is not connected; call couchset(args) first');
@@ -244,8 +287,8 @@ export class Model {
     /** Get this collection
      * getCollection
      */
-    private couchbaseConnection(): CouchbaseConnection {
-        return CouchbaseConnection.Instance;
+    private couchbaseConnection(): ModelConnection {
+        return this.connection || CouchbaseConnection.Instance;
     }
 
     /** Get this collection
@@ -297,6 +340,8 @@ export class Model {
             collectionName: this.collectionName,
             scope: this.scope,
             parse: <T>(data: T) => this.parse(data),
+            serialize: <T>(data: T) => this.serialize(data),
+            serializeField: (path: string, value: any) => this.serializeField(path, value),
             validateCreate: this.validateCreateHook,
             validateReplace: this.validateReplaceHook,
         };
@@ -304,6 +349,7 @@ export class Model {
 
     private cloneWithDefaultWhereMode(mode: DefaultWhereMode): Model {
         const options: ModalOptions = {
+            codecs: this.codecs,
             dateFields: this.dateFields,
             defaultWhere: this.defaultWhere,
             parse: this.parseHook,
@@ -321,7 +367,7 @@ export class Model {
             options.collection = this.collectionTargetName;
         }
 
-        const model = new Model(this.collectionName, options);
+        const model = new Model(this.collectionName, options, this.connection);
         model.defaultWhereMode = mode;
 
         return model;
@@ -468,6 +514,11 @@ export class Model {
         return this.withConnection(() => insertDocument<T>(this.writeContext(), data, options));
     }
 
+    /** @internal Prepare a transaction insert without issuing a normal SDK write. */
+    public prepareInsert<T>(data: T): Promise<T & AutoModelFields> {
+        return prepareInsertDocument<T>(this.writeContext(), data);
+    }
+
     /**
      * Explicit insert-or-replace write.
      */
@@ -501,6 +552,14 @@ export class Model {
         return this.withConnection(() => findByIdWithMetaDoc<T>(this.writeContext(), id, options));
     }
 
+    /** Ergonomic alias for findByIdWithMeta, intended for CAS workflows. */
+    public async getWithCas<T>(
+        id: string,
+        options?: GetOptions
+    ): Promise<FindByIdWithMetaResult<T>> {
+        return this.findByIdWithMeta<T>(id, options);
+    }
+
     /**
      * Explicit full-document replace.
      */
@@ -512,6 +571,56 @@ export class Model {
         return this.withConnection(() =>
             replaceDocumentById<T>(this.writeContext(), id, data, options)
         );
+    }
+
+    /** @internal Prepare a transaction replace without issuing a normal SDK write. */
+    public prepareReplace<T>(
+        id: string,
+        data: T,
+        options?: UpdateOptions
+    ): Promise<T & AutoModelFields> {
+        return prepareReplacementDocument<T>(this.writeContext(), id, data, options);
+    }
+
+    /**
+     * Replace only when the supplied CAS still describes the current document.
+     * CouchSet deliberately performs one SDK operation and never re-reads/retries
+     * with a new CAS, because doing so would defeat the caller's concurrency check.
+     */
+    public async replaceIfCas<T>(
+        id: string,
+        data: T,
+        cas: any,
+        options?: UpdateOptions
+    ): Promise<T & AutoModelFields> {
+        return this.replaceById<T>(id, data, {...(options || {}), cas});
+    }
+
+    /**
+     * Remove a one-time document with exactly the CAS supplied by the caller.
+     * Missing and CAS-mismatch cases are normal outcomes; transport and ambiguous
+     * failures are rethrown so callers never mistake an unknown commit for success.
+     */
+    public async consumeOnce(id: string, cas: any): Promise<ConsumeOnceResult> {
+        await this.prepare();
+
+        try {
+            await this.collection.remove(id, {cas});
+            return {status: 'consumed'};
+        } catch (error) {
+            const name = (error as any)?.name || '';
+            const message = (error as any)?.message || '';
+
+            if (/DocumentNotFound|not found/i.test(`${name} ${message}`)) {
+                return {status: 'missing'};
+            }
+
+            if (/CasMismatch|cas mismatch/i.test(`${name} ${message}`)) {
+                return {status: 'conflict'};
+            }
+
+            throw error;
+        }
     }
 
     /**
@@ -593,11 +702,66 @@ export class Model {
     }
 
     public parse<T>(data: T): T {
-        const parsed = parseSchema(this.schema, data);
+        const decoded = this.deserialize(data);
+        const parsed = parseSchema(this.schema, decoded);
         const parsedDates = parseDateFields(parsed, this.dateFields);
 
         return this.parseHook ? this.parseHook(parsedDates) : parsedDates;
     }
+
+    /** @internal Used by the typed client before a document reaches the SDK. */
+    public serialize<T>(data: T): T {
+        const result: any = {...(data as any)};
+
+        Object.keys(this.codecs).forEach((path) => {
+            const current = getPath(result, path);
+            if (current !== undefined) {
+                setPath(result, path, this.codecs[path].toDatabase(current));
+            }
+        });
+
+        return result;
+    }
+
+    /** @internal Used by patch helpers and transaction-bound models. */
+    public serializeField(path: string, value: any): any {
+        return this.codecs[path] ? this.codecs[path].toDatabase(value) : value;
+    }
+
+    private deserialize<T>(data: T): T {
+        const result: any = {...(data as any)};
+
+        Object.keys(this.codecs).forEach((path) => {
+            const current = getPath(result, path);
+            if (current !== undefined) {
+                setPath(result, path, this.codecs[path].fromDatabase(current));
+            }
+        });
+
+        return result;
+    }
 }
+
+const getPath = (data: any, path: string): any =>
+    path.split('.').reduce((value, key) => (value == null ? undefined : value[key]), data);
+
+const setPath = (data: any, path: string, value: any): void => {
+    const parts = path.split('.');
+    const key = parts.pop() as string;
+    const target = parts.reduce((current, part) => {
+        const existing = current[part];
+        if (Array.isArray(existing)) {
+            current[part] = existing.slice();
+        } else if (existing && typeof existing === 'object') {
+            // serialize/parse start with a shallow root copy. Clone every branch
+            // we traverse so dotted codecs never mutate caller or SDK content.
+            current[part] = {...existing};
+        } else {
+            current[part] = {};
+        }
+        return current[part];
+    }, data);
+    target[key] = value;
+};
 
 export default Model;
