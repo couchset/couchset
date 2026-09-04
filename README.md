@@ -10,11 +10,12 @@
 
 CouchSet is a Couchbase model layer for TypeScript and Node.js. The default `couchset` entrypoint keeps the legacy API for safe upgrades; the modern API is available from `couchset/next`.
 
-The additive client-owned primitives—typed definitions, explicit provisioning, transaction-bound models, CAS helpers, and safe index plans—are documented in [Next primitives](./docs/next-primitives.md).
+The additive client-owned primitives—typed definitions, explicit provisioning, transaction-bound models, CAS helpers, safe index plans, and Eventing—are summarized below. Their complete operational guide is [Next primitives](./docs/next-primitives.md).
 
 - [Install](#install)
 - [Legacy Default](#legacy-default)
 - [Modern API](#modern-api)
+- [Modern Client Primitives](#modern-client-primitives)
 - [Next primitives](./docs/next-primitives.md)
 - [Connection Lifecycle](#connection-lifecycle)
 - [Models](#models)
@@ -112,6 +113,88 @@ const page = await users.page<User>({
 
 await users.deleteById(created.id, {hard: true});
 ```
+
+## Modern Client Primitives
+
+`couchset/next` also offers a client-owned API for typed manifests, explicit administrative work, safe operational plans, and Eventing. These are deliberately separate from the singleton `Model` API above.
+
+### Declarative models
+
+```ts
+import {createCouchsetClient, defineModel} from 'couchset/next';
+
+const sessions = defineModel({name: 'Session', scope: 'auth', collection: 'sessions'});
+const db = createCouchsetClient({bucketName: 'app', models: [sessions]});
+const sessionModel = db.model(sessions); // registers and binds; no DDL
+```
+
+Read the [full client and model-definition guide](./docs/next-primitives.md#couchset-next-primitives).
+
+### Provisioning and dynamic models
+
+```ts
+await db.ensureCollections(); // creates only missing scopes and collections
+await db.ensureIndexes();     // create-only index DDL
+
+const reports = await db.registerModel(reportDefinition, {provision: {collections: true}});
+```
+
+Read about [provisioning and dynamic models](./docs/next-primitives.md#provisioning-and-dynamic-models).
+
+### Transactions and CAS
+
+```ts
+await db.transaction(async (tx) => {
+    await tx.model(sessions).insert({id: 'session::1', userId: 'user::1'});
+});
+
+const outcome = await sessionModel.consumeOnce('session::1', knownCas);
+```
+
+Read the [transaction and CAS safety notes](./docs/next-primitives.md#transactions-and-cas).
+
+### Safe index plans
+
+```ts
+const plan = await db.planIndexes(); // inspect missing, matching, and drifted indexes
+await db.applyIndexPlan(plan);        // creates safe replacements and waits for them
+```
+
+Read about [index drift and opt-in cleanup](./docs/next-primitives.md#index-drift).
+
+### Eventing functions
+
+```ts
+import {defineEventingFunction} from 'couchset/next';
+
+const auditOrders = defineEventingFunction({
+    name: 'audit_orders',
+    code: 'function OnUpdate(doc, meta) { log(meta.id); }',
+    sourceKeyspace: {bucket: 'app', scope: 'sales', collection: 'orders'},
+});
+
+const eventing = db.eventing({
+    namespace: 'billing',
+    metadataKeyspace: {bucket: 'app', scope: 'eventing', collection: 'billing_metadata'},
+    definitions: [auditOrders],
+});
+
+await eventing.apply();
+```
+
+Read the [Eventing lifecycle and safety guide](./docs/next-primitives.md#eventing-functions).
+
+### Test fixtures
+
+```ts
+import {createCouchsetTestFixture} from 'couchset/next';
+
+const {model, cleanup} = await createCouchsetTestFixture(db, {name: 'Invoice'});
+// use model in the test
+await cleanup();
+```
+
+Read about [isolated CouchSet test fixtures](./docs/next-primitives.md#tests).
 
 ## Connection Lifecycle
 
