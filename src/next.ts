@@ -2,6 +2,8 @@ import type {Bucket, Cluster} from 'couchbase';
 
 import couchbase from './couchbase';
 import type {CouchsetArgs} from './connection';
+import {Eventing} from './eventing';
+import type {EventingOptions} from './eventing';
 import {AutoModelFields, FieldCodec, Model, ModelConnection, ModalOptions} from './model';
 import type {ModelIndexDefinition} from './model';
 import {buildIndexQuery} from './model/indexes';
@@ -11,6 +13,7 @@ import {buildWhereExpr} from './query/helpers/builders';
 import {generateUUID} from './uuid';
 
 export type {FieldCodec} from './model';
+export * from './eventing';
 
 /** A JSON-friendly Date codec for models declared with defineModel. */
 export const dateCodec: FieldCodec<Date, string> = {
@@ -301,6 +304,14 @@ export class CouchsetClient {
 
     public definitions(): ModelDefinition<any>[] {
         return Array.from(this.registered.values()).map(({definition}) => definition);
+    }
+
+    /**
+     * Creates a namespace-owned Eventing control plane. Definitions remain
+     * declarative until eventing.apply() is called.
+     */
+    public eventing(options: EventingOptions): Eventing {
+        return new Eventing(this, options);
     }
 
     /** Bind and register a definition without provisioning or index DDL. */

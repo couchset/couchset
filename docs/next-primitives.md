@@ -76,6 +76,39 @@ await db.applyIndexPlan(plan, {dropReplaced: true}); // explicit old-index remov
 
 When a live definition drifts, the plan creates a versioned physical replacement and waits for it to become online before an old index can be dropped. This avoids an unindexed interval and makes destructive cleanup an affirmative operator action.
 
+## Eventing functions
+
+Eventing declarations use the Couchbase SDK's `EventingFunctionManager`; they are not document writes. Give each control plane an explicit namespace and a dedicated, already-provisioned metadata collection. CouchSet never opens that collection as application data or reads/writes its documents.
+
+```ts
+import {defineEventingFunction} from 'couchset/next';
+
+const auditOrders = defineEventingFunction({
+  name: 'audit_orders', // Couchbase function name: billing__audit_orders
+  code: 'function OnUpdate(doc, meta) { log(meta.id); }',
+  sourceKeyspace: {bucket: 'app', scope: 'sales', collection: 'orders'},
+});
+
+const eventing = db.eventing({
+  namespace: 'billing',
+  metadataKeyspace: {bucket: 'app', scope: 'eventing', collection: 'billing_metadata'},
+  definitions: [auditOrders],
+});
+
+await eventing.apply();             // reconcile declarations and prune only billing__* stale functions
+await eventing.apply(auditOrders);  // apply just this handler; never prunes other declarations
+await eventing.pause('audit_orders');
+await eventing.remove('audit_orders'); // undeploys then deletes; Eventing timers/checkpoints are lost
+```
+
+An ordinary code, setting, or binding change safely pauses, upserts, then reactivates a deployed function. Depending on the Eventing status after an upsert, reactivation uses either `resume` or the compatible `deploy` operation. Matching paused functions resume and matching deployed functions are no-ops. A source or Eventing metadata keyspace change is destructive because Couchbase must undeploy the function, which erases timers and checkpoints. `apply()` returns a `requiresRecreate` outcome without changing it; opt in only after reviewing that consequence:
+
+```ts
+await eventing.apply({allowRecreate: true});
+```
+
+Reports expose `created`, `updated`, `resumed`, `unchanged`, `pruned`, `paused`, `removed`, and `requiresRecreate` outcome arrays (plus `outcomes` in execution order).
+
 ## Tests
 
 `createCouchsetTestFixture(client, definition)` provisions a unique named scope/collection and returns an explicit `cleanup()` helper. Use it in test setup/teardown; fixture cleanup is the only helper that drops a resource.
