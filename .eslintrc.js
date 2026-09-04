@@ -41,7 +41,7 @@ module.exports = {
 
     },
     "overrides": [{
-        "files": "src/**/*.ts",
+        "files": ["src/**/*.ts", "next/**/*.d.ts"],
         "env": { "node": true },
         "rules": {
             "simple-import-sort/imports": "off",

@@ -5,6 +5,48 @@
     "private": false,
     "main": "dist/legacy/index.js",
     "types": "dist/legacy/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/legacy/index.d.ts",
+            "require": "./legacy/index.js",
+            "default": "./legacy/index.js"
+        },
+        "./next": {
+            "types": "./dist/index.d.ts",
+            "require": "./next/index.js",
+            "default": "./next/index.js"
+        },
+        "./next/index": {
+            "types": "./next/index.d.ts",
+            "require": "./next/index.js",
+            "default": "./next/index.js"
+        },
+        "./next/index.js": {
+            "types": "./next/index.d.ts",
+            "require": "./next/index.js",
+            "default": "./next/index.js"
+        },
+        "./legacy": {
+            "types": "./dist/legacy/index.d.ts",
+            "require": "./legacy/index.js",
+            "default": "./legacy/index.js"
+        },
+        "./legacy/index": {
+            "types": "./dist/legacy/index.d.ts",
+            "require": "./legacy/index.js",
+            "default": "./legacy/index.js"
+        },
+        "./legacy/index.js": {
+            "types": "./dist/legacy/index.d.ts",
+            "require": "./legacy/index.js",
+            "default": "./legacy/index.js"
+        },
+        "./register": "./register/index.js",
+        "./register/transpile-only": "./register/transpile-only.js",
+        "./register/type-check": "./register/type-check.js",
+        "./package.json": "./package.json",
+        "./*": "./*"
+    },
     "files": [
         "CHANGELOG.md",
         "docs/",
