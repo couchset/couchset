@@ -24,6 +24,10 @@ const db = createCouchsetClient({
 
 `defineModel()` only describes metadata; `db.model(sessions)` only binds and registers the model. Neither operation creates Couchbase resources. Legacy `new Model()` remains supported and continues to use the existing singleton.
 
+See [joined reads and consistency](joins-and-consistency.md) for inferred `findMany`,
+`findOne`, and `page` results, structured ANSI predicates, relation codecs,
+projections, and SDK read consistency options.
+
 ## Provisioning and dynamic models
 
 Run administrative DDL explicitly, with credentials that have `Manage Scopes` and query-index permissions:

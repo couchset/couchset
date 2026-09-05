@@ -20,6 +20,7 @@ The additive client-owned primitives—typed definitions, explicit provisioning,
 - [Connection Lifecycle](#connection-lifecycle)
 - [Models](#models)
 - [Reads](#reads)
+- [Typed Joins and Read Consistency](#typed-joins-and-read-consistency)
 - [Document Modeling](./docs/document-modeling.md)
 - [Writes](#writes)
 - [Queries](#queries)
@@ -320,6 +321,89 @@ await users.withDeleted().findMany<User>();
 await users.onlyDeleted().findMany<User>();
 await users.withoutDefaultWhere().findMany<User>();
 ```
+
+## Typed Joins and Read Consistency
+
+Client-bound models infer root and related fields. Using the client-owned `db`
+above, join profiles to battles by arbitrary fields:
+
+```ts
+import {dateCodec, defineModel, joinField} from 'couchset/next';
+import {QueryScanConsistency} from 'couchbase';
+
+const battles = db.model(defineModel<{
+    createdByUserId: string;
+    startsAt: Date;
+}>({name: 'Battle', scope: 'app', collection: 'battles', codecs: {startsAt: dateCodec}}));
+
+const profiles = db.model(defineModel<{
+    ownerUserId: string;
+    displayName: string;
+    birthday: Date;
+}>({name: 'Profile', scope: 'app', collection: 'profiles', codecs: {birthday: dateCodec}}));
+
+const joined = await battles.page({
+    sourceAlias: 'battle',
+    include: [{
+        as: 'creator',
+        model: profiles,
+        type: 'leftJoin',
+        on: {
+            left: joinField('creator.ownerUserId'),
+            op: '$eq',
+            right: joinField('battle.createdByUserId'),
+        },
+    }],
+    limit: 20,
+    queryOptions: {scanConsistency: QueryScanConsistency.RequestPlus},
+});
+
+joined.items[0]?.startsAt;          // Date | undefined
+joined.items[0]?.creator?.birthday; // Date | undefined; related codec applied
+```
+
+Provision the collections and appropriate indexes explicitly before querying.
+`joinField()` denotes a field reference; an ordinary string is a bound value.
+Use `$and` / `$or` to combine predicates. Existing `key` / `keys` includes still
+use `ON KEYS`.
+
+Use NEST for arrays, and select just the fields needed:
+
+```ts
+const summaries = await battles.findMany({
+    select: ['startsAt'],
+    include: [{
+        as: 'creators',
+        model: profiles,
+        type: 'leftNest',
+        on: {left: joinField('creators.ownerUserId'), op: '$eq', right: joinField('doc.createdByUserId')},
+        select: ['displayName', 'birthday'],
+    }],
+});
+// {startsAt: Date; creators: {displayName: string; birthday: Date}[]}[]
+```
+
+LEFT JOIN may omit its related property; LEFT NEST returns `[]` when unmatched.
+JOIN preserves one row per match, including repeated root IDs. Choose an alias
+that does not overwrite a root field. NEST does not promise source-key ordering.
+
+For read-your-writes, pass tokens from successful SDK mutations:
+
+```ts
+import {MutationState, MutationToken} from 'couchbase';
+
+async function readAfterWrites(tokens: MutationToken[]) {
+    return battles.findMany({
+        queryOptions: {consistentWith: new MutationState(...tokens)},
+    });
+}
+// Call with SDK mutationResult.token values, not whole mutation results.
+```
+
+`request_plus` and `consistentWith` are alternatives; neither is a multi-document
+transaction. Defaults are unchanged when no consistency option is supplied.
+See [joined reads and consistency](./docs/joins-and-consistency.md) for predicates,
+projection limits, codecs, compatibility changes, and live validation results.
 
 ## Writes
 

@@ -1,4 +1,5 @@
 import CouchbaseConnection from '../connection';
+import {queryOptionsWithParameters, SafeQueryOptions} from '../model/safe-query';
 
 export type CustomQueryParameters = {[key: string]: any} | any[];
 export type CustomQueryLogger = (message: string, details?: any) => void;
@@ -10,6 +11,7 @@ export interface CustomQueryArgs {
     debug?: boolean;
     logger?: CustomQueryLogger;
     throwOnError?: boolean;
+    queryOptions?: SafeQueryOptions;
 }
 
 export interface CustomQueryPagination {
@@ -30,7 +32,10 @@ export const CustomQuery = async <T>(
     const {query, limit, params, debug = false, logger, throwOnError = true} = args;
 
     const cluster = CouchbaseConnection.Instance.cluster;
-    const queryOptions = params === undefined ? undefined : {parameters: params};
+    const queryOptions =
+        args.queryOptions || params !== undefined
+            ? queryOptionsWithParameters(params, args.queryOptions)
+            : undefined;
 
     try {
         if (debug && logger) {

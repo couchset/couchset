@@ -5,12 +5,17 @@ import type {CouchsetArgs} from './connection';
 import {Eventing} from './eventing';
 import type {EventingOptions} from './eventing';
 import {AutoModelFields, FieldCodec, Model, ModelConnection, ModalOptions} from './model';
-import type {ModelIndexDefinition} from './model';
+import type {ModelIndexDefinition, ModelReadArgs, ModelPageResult} from './model';
+import type {CheckedReadArgs, ModelDocument, ModelReadResult} from './model/read-types';
 import {buildIndexQuery} from './model/indexes';
 import {escapeIdentifier, keyspaceIdentifier} from './model/keyspace';
 import type {SortType} from './query/interface/query.types';
 import {buildWhereExpr} from './query/helpers/builders';
 import {generateUUID} from './uuid';
+
+export {joinField} from './model/include';
+export type {JoinField, JoinPredicate, IncludeDefinition, IncludeType} from './model/include';
+export type {ModelReadResult} from './model/read-types';
 
 export type {FieldCodec} from './model';
 export * from './eventing';
@@ -53,7 +58,33 @@ export type ModelCreateInput<T> = Omit<T, keyof AutoModelFields> &
     Partial<Pick<T, Extract<keyof T, keyof AutoModelFields>>>;
 
 export interface TypedModel<T>
-    extends Omit<Model, 'getById' | 'getWithCas' | 'insert' | 'replaceById' | 'replaceIfCas'> {
+    extends Omit<
+            Model,
+            | 'getById'
+            | 'getWithCas'
+            | 'insert'
+            | 'replaceById'
+            | 'replaceIfCas'
+            | 'findMany'
+            | 'findOne'
+            | 'page'
+            | 'withDeleted'
+            | 'onlyDeleted'
+            | 'withoutDefaultWhere'
+        >,
+        ModelDocument<T & AutoModelFields> {
+    findMany<const A extends ModelReadArgs = {}>(
+        args?: CheckedReadArgs<T, A>
+    ): Promise<ModelReadResult<T, A>[]>;
+    findOne<const A extends ModelReadArgs = {}>(
+        args?: CheckedReadArgs<T, A>
+    ): Promise<ModelReadResult<T, A> | null>;
+    page<const A extends ModelReadArgs = {}>(
+        args?: CheckedReadArgs<T, A>
+    ): Promise<ModelPageResult<ModelReadResult<T, A>>>;
+    withDeleted(): TypedModel<T>;
+    onlyDeleted(): TypedModel<T>;
+    withoutDefaultWhere(): TypedModel<T>;
     getById(id: string, options?: any): Promise<T & AutoModelFields>;
     getWithCas(
         id: string,

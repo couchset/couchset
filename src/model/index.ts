@@ -84,7 +84,8 @@ export type {
 } from './safe-query';
 export type {FindByIdWithMetaResult, PatchByIdArgs} from './write-helpers';
 export type {Hydrated} from './hydrated-document';
-export type {IncludeDefinition, IncludeType} from './include';
+export type {IncludeDefinition, IncludeType, JoinField, JoinPredicate} from './include';
+export {joinField} from './include';
 export type {EnsureIndexOptions, ModelIndexDefinition} from './indexes';
 export type {TtlOptions} from './ttl';
 export type {ParseHook, ValidationHook} from './validation';
@@ -323,6 +324,7 @@ export class Model {
             cluster: this.couchbaseConnection().cluster,
             parse: <T>(data: T) => this.parse(data),
             resultKey: this.queryResultKey(),
+            parseProjection: <T>(data: T) => this.parseProjection(data),
         };
     }
 
@@ -707,6 +709,11 @@ export class Model {
         const parsedDates = parseDateFields(parsed, this.dateFields);
 
         return this.parseHook ? this.parseHook(parsedDates) : parsedDates;
+    }
+
+    /** Decode present projection fields without invoking full-document parse hooks. */
+    public parseProjection<T>(data: T): T {
+        return parseDateFields(parseSchema(this.schema, this.deserialize(data)), this.dateFields);
     }
 
     /** @internal Used by the typed client before a document reaches the SDK. */

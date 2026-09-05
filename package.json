@@ -60,6 +60,7 @@
         "lint": "tslint \"src/**/*.ts\" --project tsconfig.json",
         "build": "rimraf dist && ./node_modules/.bin/tsc --skipLibCheck",
         "test": "npm run test:unit && npm run test:integration",
+        "test:types": "npm run build && node scripts/check-read-types.js",
         "test:unit": "mocha \"src/**/*.test.ts\" --ignore src/index.test.ts --ignore src/index.serverless.test.ts --exit",
         "test:integration": "mocha src/index.test.ts --exit",
         "test:serverless": "mocha src/index.serverless.test.ts --exit",

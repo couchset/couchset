@@ -99,7 +99,7 @@ CouchSet includes can join related documents by key, but large payload joins
 should be reserved for focused detail reads or small result sets.
 
 ```ts
-const report = await reports.findOne<ReportSummary & {payload: ReportPayload}>({
+const report = await reports.findOne({
     where: {id: {$eq: reportId}},
     include: [
         {
@@ -111,6 +111,10 @@ const report = await reports.findOne<ReportSummary & {payload: ReportPayload}>({
     ],
 });
 ```
+
+For client-bound models, the related type is inferred and `payload` may be absent
+or null for an unmatched optional join. See [joined reads](joins-and-consistency.md)
+for ANSI predicates, projection codecs, and alias requirements.
 
 For list pages, keep the companion model out of the query and rely on summary
 fields instead.

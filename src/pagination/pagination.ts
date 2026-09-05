@@ -1,4 +1,5 @@
 import CouchbaseConnection from '../connection';
+import {queryOptionsWithParameters, validateReadConsistency} from '../model/safe-query';
 
 import {buildPaginationQuery} from './safe-pagination';
 import {PaginationArgs} from './types';
@@ -18,10 +19,14 @@ export const Pagination = async (args: PaginationArgs): Promise<any[]> => {
 
     const cluster = CouchbaseConnection.Instance.cluster;
 
+    validateReadConsistency(args.queryOptions);
     try {
         const {query, parameters, selectAll} = buildPaginationQuery(args);
 
-        const {rows} = await cluster.query(query, {parameters});
+        const {rows} = await cluster.query(
+            query,
+            queryOptionsWithParameters(parameters, args.queryOptions)
+        );
 
         const completedRows = rows.map((r: any) => {
             return selectAll ? r[resultKey] : r;

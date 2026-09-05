@@ -22,10 +22,33 @@ export interface QueryPageResult<T> {
     params?: any;
 }
 
-const queryOptionsWithParameters = (
+/** SDK consistency modes are mutually exclusive, including explicit not_bounded. */
+export const validateReadConsistency = (options?: SafeQueryOptions): void => {
+    if (
+        options?.scanConsistency !== undefined &&
+        !['request_plus', 'not_bounded'].includes(options.scanConsistency)
+    ) {
+        throw new Error('Unsupported query scanConsistency');
+    }
+    if (options?.scanConsistency !== undefined && options?.consistentWith !== undefined) {
+        throw new Error('scanConsistency and consistentWith cannot be combined');
+    }
+    const raw = options?.raw;
+    if (
+        raw &&
+        ['scan_consistency', 'scan_vectors', 'scan_vector'].some((key) =>
+            Object.prototype.hasOwnProperty.call(raw, key)
+        )
+    ) {
+        throw new Error('Use scanConsistency or consistentWith instead of raw consistency options');
+    }
+};
+
+export const queryOptionsWithParameters = (
     params?: QueryParameters,
     options?: SafeQueryOptions
 ): QueryOptions => {
+    validateReadConsistency(options);
     const queryOptions: any = {...(options || {})};
     delete queryOptions.debug;
     delete queryOptions.logger;

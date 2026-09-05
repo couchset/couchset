@@ -1,0 +1,121 @@
+import {createCouchsetClient, defineModel, dateCodec, joinField, ModelReadArgs, IncludeType} from '__COUCHSET_ENTRY__';
+const client = createCouchsetClient();
+const roots = client.model(defineModel<{ownerId: string; startsAt: Date}>({name: 'Root', codecs: {startsAt: dateCodec}}));
+const related = client.model(defineModel<{birthday: Date; name: string}>({name: 'Related', codecs: {birthday: dateCodec}}));
+async function check(args: ModelReadArgs, optional: boolean, kind: IncludeType) {
+    const rows = await roots.findMany({include: [{as: 'owner', model: related, key: 'ownerId', type: 'leftJoin'}]});
+    const date: Date = rows[0].startsAt;
+    const birthday: Date | undefined = rows[0].owner?.birthday;
+    // @ts-expect-error LEFT JOIN can be missing or null.
+    const definite: {birthday: Date} = rows[0].owner;
+    const one = await roots.findOne();
+    // @ts-expect-error findOne can return null.
+    one.startsAt;
+    const inner = await roots.findMany({include: [{as: 'owner', model: related, key: 'ownerId'}]});
+    const name: string = inner[0].owner.name;
+    // @ts-expect-error JOIN is not an array.
+    inner[0].owner[0].name;
+    const nested = await roots.page({select: ['startsAt'], include: [{as: 'people', model: related, keys: 'ids', type: 'leftNest', select: ['birthday']}]});
+    const dates: Date[] = nested.items[0].people.map(item => item.birthday);
+    // @ts-expect-error Projection excludes name.
+    nested.items[0].people[0].name;
+    // @ts-expect-error Projection excludes root ownerId.
+    nested.items[0].ownerId;
+    const projected = await roots.findOne({select: ['startsAt']});
+    if (projected) {
+        const start: Date = projected.startsAt;
+        // @ts-expect-error Projection excludes id.
+        projected.id;
+    }
+    // @ts-expect-error Known root alias collision.
+    roots.findMany({include: [{as: 'ownerId', model: related, key: 'ownerId'}]});
+    // @ts-expect-error Row assertions are not inferred model reads.
+    roots.findMany<{fiction: string}>();
+    const raw = await roots.findMany({select: 'RAW 1'});
+    // @ts-expect-error Arbitrary projection shape is unknown.
+    raw[0].startsAt;
+    const dynamic = await roots.findMany(args);
+    // @ts-expect-error Dynamic args may project arbitrary expressions.
+    dynamic[0].startsAt;
+    const maybe = await roots.findMany({include: [{as: 'owner', model: related, key: 'ownerId', optional}]});
+    // @ts-expect-error Dynamic optional join can be absent.
+    maybe[0].owner.birthday;
+    const varying = await roots.findMany({include: [{as: 'owner', model: related, key: 'ownerId', type: kind}]});
+    // @ts-expect-error A dynamic kind may produce an array instead of a document.
+    varying[0].owner.birthday;
+    return {date, birthday, name, dates};
+}
+
+async function widenedSelections(select: ('name' | 'birthday')[]) {
+    const root = await related.findMany({select});
+    // @ts-expect-error A widened array can select only name.
+    const rootDate: Date = root[0].birthday;
+    const maybeDate: Date | undefined = root[0].birthday;
+    const rows = await roots.findMany({include: [{as: 'owner', model: related, key: 'ownerId', select}]});
+    // @ts-expect-error A widened related selection can omit birthday.
+    const relatedDate: Date = rows[0].owner.birthday;
+    const optionalRelatedDate: Date | undefined = rows[0].owner.birthday;
+    return {maybeDate, optionalRelatedDate};
+}
+
+async function optionalIncludeProperties(
+    optional: {as: 'owner'; model: typeof related; key: string; optional?: boolean},
+    kind: {as: 'owner'; model: typeof related; key: string; type?: 'leftNest'},
+    selection: {as: 'owner'; model: typeof related; key: string; select?: readonly ['name']},
+    combined: {as: 'owner'; model: typeof related; key: string; type?: 'leftNest'; optional?: boolean; select?: readonly ['name']},
+) {
+    const a = await roots.findMany({include: [optional]});
+    // @ts-expect-error optional may be true, so the relation can be absent.
+    const optionalDate: Date = a[0].owner.birthday;
+    const b = await roots.findMany({include: [kind]});
+    // @ts-expect-error Optional type can switch between JOIN and NEST.
+    const kindDate: Date = b[0].owner.birthday;
+    const c = await roots.findMany({include: [selection]});
+    // @ts-expect-error Optional selection can omit birthday.
+    const selectedDate: Date = c[0].owner.birthday;
+    const selectedName: string = c[0].owner.name;
+    const d = await roots.findMany({include: [combined]});
+    // @ts-expect-error Optional kind, optionality and projection cannot imply a full document.
+    const combinedDate: Date = d[0].owner.birthday;
+    return selectedName;
+}
+
+async function unionEntries(field: 'name' | 'birthday', alias: 'owner' | 'creator', dynamicAlias: string,
+    alternatives: {as: 'owner'; model: typeof related; key: string} | {as: 'creator'; model: typeof related; key: string},
+    optionalTuple: readonly ['name', 'birthday'?]) {
+    const root = await related.findMany({select: [field]});
+    // @ts-expect-error One union-valued tuple element does not select both fields.
+    const rootDate: Date = root[0].birthday;
+    const joined = await roots.findMany({include: [{as: 'owner', model: related, key: 'ownerId', select: [field]}]});
+    // @ts-expect-error Same uncertainty applies to related projections.
+    const joinedDate: Date = joined[0].owner.birthday;
+    const aliases = await roots.findMany({include: [{as: alias, model: related, key: 'ownerId'}]});
+    // @ts-expect-error Only one of owner and creator exists at runtime.
+    const ownerName: string = aliases[0].owner.name;
+    // @ts-expect-error The alternative alias is not guaranteed either.
+    const creatorName: string = aliases[0].creator.name;
+    const dynamic = await roots.findMany({include: [{as: dynamicAlias, model: related, key: 'ownerId'}]});
+    // @ts-expect-error Dynamic aliases do not guarantee any particular property.
+    const dynamicName: string = dynamic[0].owner.name;
+    const alternativesRows = await roots.findMany({include: [alternatives]});
+    // @ts-expect-error Union-valued include objects are alternatives, not simultaneous joins.
+    const alternativeName: string = alternativesRows[0].owner.name;
+    const optional = await related.findMany({select: optionalTuple});
+    // @ts-expect-error An optional tuple element may not be selected.
+    const optionalDate: Date = optional[0].birthday;
+    const exact = await related.findMany({select: ['name', 'birthday']});
+    const exactName: string = exact[0].name;
+    const exactDate: Date = exact[0].birthday;
+    return {exactName, exactDate};
+}
+
+
+import {MutationState} from '__COUCHBASE_ENTRY__';
+async function mutationStateExample() {
+    const mutation = await related.getCollection().upsert('probe', {name: 'example'});
+    if (!mutation.token) throw new Error('Mutation token unavailable');
+    const state = new MutationState(mutation.token);
+    await roots.findMany({queryOptions: {consistentWith: state}});
+    // @ts-expect-error MutationState accepts tokens, not whole SDK mutation results.
+    new MutationState(mutation);
+}

@@ -2,17 +2,20 @@ import type {Cluster} from 'couchbase';
 
 import {buildSelectionQuery} from '../pagination/safe-pagination';
 
-import {buildIncludedSelectionQuery, IncludeDefinition} from './include';
+import {buildIncludedSelectionQuery, IncludeDefinition, includeOperator} from './include';
+import {queryOptionsWithParameters, SafeQueryOptions} from './safe-query';
 
 export interface ModelReadArgs {
-    select?: any[] | string;
+    select?: readonly any[] | string;
     where?: any;
     orderBy?: any;
     limit?: number;
     page?: number;
     offset?: number;
     throwOnError?: boolean;
-    include?: IncludeDefinition[];
+    include?: readonly IncludeDefinition[];
+    sourceAlias?: string;
+    queryOptions?: SafeQueryOptions;
 }
 
 export interface ModelPageInfo {
@@ -35,6 +38,7 @@ export interface ModelReadContext {
     cluster: Cluster;
     parse: <T>(data: T) => T;
     resultKey?: string;
+    parseProjection?: <T>(data: T) => T;
 }
 
 const scopedWhere = (collectionName: string, where?: any): any => {
@@ -49,16 +53,54 @@ const scopedWhere = (collectionName: string, where?: any): any => {
 
 const shouldThrow = (args: ModelReadArgs): boolean => args.throwOnError !== false;
 
-const unwrapRows = <T>(
+const decodeRows = <T>(
     rows: any[],
-    bucketName: string,
+    context: ModelReadContext,
+    args: ModelReadArgs,
     selectAll: boolean,
-    parse: <TItem>(data: TItem) => TItem
+    resultKey?: string
 ): T[] => {
+    const includes = args.include || [];
+    const structured =
+        Array.isArray(args.select) &&
+        args.select.every((field) => typeof field === 'string' && !field.includes('.'));
     return rows.map((row) => {
-        const data = selectAll ? row[bucketName] : row;
-
-        return parse<T>(data);
+        let root: any;
+        if (resultKey === '__cs_root') root = row.__cs_root;
+        else root = selectAll ? row[context.resultKey || context.bucketName] : row;
+        // Raw/computed projections have unknown shape and must not run document codecs.
+        const parse = selectAll ? context.parse : structured ? context.parseProjection : undefined;
+        if (!includes.length && !parse) return root as T;
+        const result: any = parse ? parse(root) : {...root};
+        for (const item of includes) {
+            if (
+                resultKey === '__cs_root' &&
+                (Object.prototype.hasOwnProperty.call(root, item.as) ||
+                    Object.prototype.hasOwnProperty.call(result, item.as))
+            ) {
+                throw new Error(
+                    `Include alias ${item.as} would overwrite a root field; choose another alias`
+                );
+            }
+            if (!Object.prototype.hasOwnProperty.call(row, item.as)) {
+                if (includeOperator(item).includes('NEST')) result[item.as] = [];
+                continue;
+            }
+            const value = row[item.as];
+            if (includeOperator(item).includes('NEST') && (value === null || value === undefined)) {
+                result[item.as] = [];
+                continue;
+            }
+            const model = typeof item.model === 'object' ? item.model : undefined;
+            const decode = item.select ? model?.parseProjection : model?.parse;
+            result[item.as] =
+                value === null || value === undefined || !decode
+                    ? value
+                    : Array.isArray(value)
+                    ? value.map((document) => decode.call(model, document))
+                    : decode.call(model, value);
+        }
+        return result as T;
     });
 };
 
@@ -79,12 +121,13 @@ const runReadQuery = async <T>(
               offset: queryArgs.offset,
               orderBy: queryArgs.orderBy,
               include: queryArgs.include,
+              sourceAlias: queryArgs.sourceAlias,
           })
         : {
               ...buildSelectionQuery(
                   {
                       bucketName: context.bucketName,
-                      select: queryArgs.select || '*',
+                      select: (queryArgs.select || '*') as any,
                       where: {where: scopedWhere(context.collectionName, queryArgs.where)},
                       limit: queryArgs.limit,
                       page: queryArgs.page,
@@ -97,15 +140,11 @@ const runReadQuery = async <T>(
           };
     const {query, parameters, selectAll, resultKey} = builtQuery;
 
+    const options = queryOptionsWithParameters(parameters, args.queryOptions);
     try {
-        const {rows = []} = await context.cluster.query(query, {parameters});
+        const {rows = []} = await context.cluster.query(query, options);
 
-        return unwrapRows<T>(
-            rows,
-            resultKey || context.resultKey || context.bucketName,
-            selectAll,
-            context.parse
-        );
+        return decodeRows<T>(rows, context, queryArgs, selectAll, resultKey);
     } catch (error) {
         if (shouldThrow(args)) {
             throw error;
@@ -144,6 +183,8 @@ export const exists = async (
     context: ModelReadContext,
     args: ModelReadArgs = {}
 ): Promise<boolean> => {
+    if (args.include?.length)
+        throw new Error('count/exists do not support includes; use findMany/page for joined rows');
     const {query, parameters} = buildSelectionQuery(
         {
             bucketName: context.bucketName,
@@ -155,8 +196,9 @@ export const exists = async (
         {includeLimitOffset: true}
     );
 
+    const options = queryOptionsWithParameters(parameters, args.queryOptions);
     try {
-        const {rows = []} = await context.cluster.query(query, {parameters});
+        const {rows = []} = await context.cluster.query(query, options);
 
         return rows.length > 0;
     } catch (error) {
@@ -172,14 +214,17 @@ export const count = async (
     context: ModelReadContext,
     args: ModelReadArgs = {}
 ): Promise<number> => {
+    if (args.include?.length)
+        throw new Error('count/exists do not support includes; use findMany/page for joined rows');
     const {query, parameters} = buildSelectionQuery({
         bucketName: context.bucketName,
         select: 'RAW COUNT(1)',
         where: {where: scopedWhere(context.collectionName, args.where)},
     });
 
+    const options = queryOptionsWithParameters(parameters, args.queryOptions);
     try {
-        const {rows = []} = await context.cluster.query(query, {parameters});
+        const {rows = []} = await context.cluster.query(query, options);
 
         return Number(rows[0] || 0);
     } catch (error) {

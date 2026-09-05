@@ -1,3 +1,5 @@
+import type {SafeQueryOptions} from '../model/safe-query';
+
 export interface PaginationArgs {
     bucketName: string;
     resultKey?: string;
@@ -8,4 +10,5 @@ export interface PaginationArgs {
     offset?: number;
     orderBy?: any;
     throwOnError?: boolean;
+    queryOptions?: SafeQueryOptions;
 }
