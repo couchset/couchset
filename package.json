@@ -1,6 +1,6 @@
 {
     "name": "couchset",
-    "version": "0.5.1",
+    "version": "0.5.2",
     "description": "Couchbase ORM",
     "private": false,
     "main": "dist/legacy/index.js",
