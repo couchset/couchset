@@ -46,9 +46,17 @@ result.items[0]?.creator?.birthday; // Date | undefined
 A `joinField('alias.path')` is a field reference; an ordinary string on the
 right is always a bound value, even when it contains a dot. Aliases must refer
 to the root (default `doc`), the current include, or an earlier include. Field
-paths use dots as separators and quote every identifier segment. Alias strings
-are quoted, including reserved words. A literal dot inside a field name is not
-supported by the structured field-reference syntax.
+paths use dots as separators and quote every identifier segment. Nonnegative
+integer indexes (`[0]`, `[1]`) and wildcard traversal (`[*]`) remain SQL++ array
+operators. This parsing applies to `key`/`keys`, joined WHERE/orderBy fields,
+and `joinField` references, including source-qualified paths. Alias strings
+are quoted, including reserved words. Backtick-delimited segments represent
+literal field names; double a backtick inside such a segment to escape it.
+For example, the path string '`media[*]`' names a literal field, while
+'media[*].mediaId' traverses the media array. Empty segments, unmatched brackets,
+negative/decimal indexes, slices, expression indexes, and unsafe-size indexes
+are rejected. Top-level projection arrays remain literal field selections;
+this change does not add array-expression projections or a fluent path builder.
 
 Comparisons support `$eq`, `$neq`, `$gt`, `$gte`, `$lt`, and `$lte`. Nest nonempty
 `$and` and `$or` arrays to combine predicates:
@@ -226,3 +234,33 @@ type fixture; the corrected live run passed all 20 probes. These observations
 validate this local server and synthetic workload; they do not establish a
 concurrent multi-document snapshot, a production index plan, or compatibility
 with every supported server version.
+
+
+### Array-path compatibility regression
+
+The include identifier-quoting change initially quoted `media[*]` and
+`participantIds[0]` as whole field names. The validated path parser restores
+array traversal without interpolating SQL expressions or changing value binding:
+
+```ts
+const results = await battles.findMany({
+    where: {'participantIds[0]': 'profile::demo'},
+    include: [{
+        as: 'mediaDocuments',
+        model: mediaModel,
+        keys: 'media[*].mediaId',
+        type: 'leftNest',
+    }],
+});
+// ON KEYS `doc`.`media`[*].`mediaId`
+// Root _type filter plus `doc`.`participantIds`[0]=$cs_param_1
+```
+
+For an opt-in regression probe, run `npm run build` then
+`node scripts/live-array-path-probe.cjs`. It reads `.env`, requires a loopback
+server, creates a uniquely named scope and indexes, and removes that scope in
+`finally`. It writes a sanitized JSON report to the OS temporary directory.
+Eight probes passed locally on Query 8.0.3 on 2026-09-05, verifying media
+hydration/codecs, `[0]` and `[1]` filters, nested wildcard paths, aliases, sort
+expressions, ANSI references, literal bracket-containing fields, and LEFT NEST
+pagination. Nested result assertions compare membership, not source-key order.

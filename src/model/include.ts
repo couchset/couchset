@@ -1,6 +1,7 @@
 import {LogicalWhereExpr, SortType} from '../query/interface/query.types';
 
 import {escapeIdentifier} from './keyspace';
+import {parseFieldPath, renderFieldPath} from './field-path';
 
 export type IncludeType = 'join' | 'leftJoin' | 'nest' | 'leftNest';
 
@@ -36,7 +37,6 @@ const identifier = (name: string): string => {
     if (!name || name.indexOf('\0') !== -1) throw new Error('Empty or invalid identifier');
     return escapeIdentifier(name);
 };
-const fieldPath = (path: string): string => path.split('.').map(identifier).join('.');
 
 export interface IncludedSelectionQueryArgs {
     keyspace: string;
@@ -132,10 +132,12 @@ const keyspaceFromInclude = (include: IncludeDefinition, defaultKeyspace: string
 };
 
 const sourceField = (field: string, sourceAlias: string): string => {
-    const prefix = `${sourceAlias}.`;
-    return field.indexOf(prefix) === 0
-        ? fieldPath(field)
-        : `${identifier(sourceAlias)}.${fieldPath(field)}`;
+    const segments = parseFieldPath(field);
+    const qualified =
+        segments.length > 1 && segments[0].name === sourceAlias && !segments[0].selectors.length;
+    return qualified
+        ? renderFieldPath(segments)
+        : `${identifier(sourceAlias)}.${renderFieldPath(segments)}`;
 };
 
 export const includeOperator = (include: IncludeDefinition): string => {
@@ -189,10 +191,10 @@ const predicateExpr = (
     const reference = (value: any): string => {
         if (!value || typeof value.$field !== 'string' || Object.keys(value).length !== 1)
             throw new Error('Expected explicit joinField reference');
-        const parts = value.$field.split('.');
-        if (parts.length < 2 || !aliases.has(parts[0]))
-            throw new Error(`Unknown ON alias: ${parts[0]}`);
-        return fieldPath(value.$field);
+        const segments = parseFieldPath(value.$field);
+        if (segments.length < 2 || segments[0].selectors.length || !aliases.has(segments[0].name))
+            throw new Error(`Unknown ON alias: ${segments[0].name}`);
+        return renderFieldPath(segments);
     };
     const right = comparison.right;
     return `${reference(comparison.left)} ${comparisonOperators[comparison.op]} ${
