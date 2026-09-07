@@ -119,3 +119,39 @@ async function mutationStateExample() {
     // @ts-expect-error MutationState accepts tokens, not whole SDK mutation results.
     new MutationState(mutation);
 }
+// Additive plugin typing preserves existing typed-model inference.
+import {defineModelPlugin as pluginDefinition} from '__COUCHSET_ENTRY__';
+const typedPlugin = pluginDefinition<{value: string}>(() => ({indexes: [{name: 'value', fields: ['value']}]}));
+import {withModelScopes, withModelMethods} from '__COUCHSET_ENTRY__';
+import {withModelBulk} from '__COUCHSET_ENTRY__';
+async function bulkModelTypes() {
+    const bulk = withModelBulk(related);
+    const row = await bulk.findOne();
+    const name: string | undefined = row?.name;
+    const keyspace: string = bulk.keyspace();
+    await bulk.getMany(['id']);
+    // @ts-expect-error IDs remain strings on the ordinary model API
+    await bulk.getById(42);
+}
+const scopedRelated = withModelScopes(related, {
+    named: (name: string) => ({where: {name}}),
+    summary: () => ({select: ['name'] as const}),
+});
+async function scopedTypes() {
+    const rows = await scopedRelated.scopes.named('hello').scopes.summary().findMany({limit: 5});
+    const name: string = rows[0].name;
+    // @ts-expect-error not projected
+    rows[0].birthday;
+    // @ts-expect-error wrong scope argument
+    scopedRelated.scopes.named(42);
+    const full = await scopedRelated.scopes.named('hello').findOne();
+    const birthday: Date | undefined = full?.birthday;
+    const extended = withModelMethods(related, {named(name: string) {return this.findOne({where: {name}});}});
+    await extended.named('hello');
+    // @ts-expect-error custom method parameter
+    extended.named(42);
+}
+pluginDefinition<{value: string}>(() => ({indexes: [{name: 'invalid', fields: [
+    // @ts-expect-error plugin indexes use document fields
+    'missing',
+]}]}));

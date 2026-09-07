@@ -286,6 +286,39 @@ export class Eventing {
         return Array.from(this.definitionsByName.values()).map((definition) => ({...definition}));
     }
 
+    /** Read-only definition drift report; never pauses, deploys or prunes. */
+    public async plan(): Promise<{
+        functions: Array<{name: string; action: string}>;
+        staleOwnedFunctions: string[];
+    }> {
+        const manager = await this.manager();
+        const live = await manager.getAllFunctions();
+        const declared = new Set<string>();
+        const functions = this.definitions().map((definition) => {
+            const name = this.physicalName(definition.name);
+            declared.add(name);
+            const current = live.find((item) => item.name === name);
+            const desired = this.sdkDefinition(definition);
+            return {
+                name,
+                action: !current
+                    ? 'create'
+                    : !keyspaceEquals(current.sourceKeyspace, desired.sourceKeyspace) ||
+                      !keyspaceEquals(current.metadataKeyspace, desired.metadataKeyspace)
+                    ? 'requires-recreate'
+                    : this.matches(current, desired, definition)
+                    ? 'matching'
+                    : 'update',
+            };
+        });
+        return {
+            functions,
+            staleOwnedFunctions: live
+                .filter((item) => this.owns(item.name) && !declared.has(item.name))
+                .map((item) => item.name),
+        };
+    }
+
     /** Converts a logical declaration name into its Couchbase function name. */
     public physicalName(name: string): string {
         this.assertLogicalName(name);
