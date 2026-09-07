@@ -249,9 +249,41 @@ const users = defineModel<User>({
 });
 ```
 
-This remains optional. Caller-provided IDs and CouchSet-generated IDs continue
-to work. Key strategies should also help generate related keys and validate a
-key before a KV operation without forcing key components into every stored
+Key strategies are strictly opt-in and consumer-defined. If `key` is absent,
+CouchSet must preserve today's behavior exactly: caller-provided IDs continue
+to work, generated IDs use the existing algorithm, existing documents remain
+addressable, and no key validation, parsing, transformation, or normalization
+occurs.
+
+A configured strategy should affect only creation of a missing key by default.
+It must not silently rewrite an explicit caller-provided ID:
+
+```ts
+await users.insert({
+  id: 'custom-existing-key',
+  tenantId: 'acme',
+  userId: '42',
+});
+```
+
+The consumer can explicitly choose how supplied IDs interact with the strategy:
+
+```ts
+const users = defineModel<User>({
+  name: 'User',
+  key: {
+    create: createUserKey,
+    parse: userKey.parse,
+    explicitId: 'allow', // compatibility default; alternatives: validate, reject
+  },
+});
+```
+
+CouchSet may export optional composition utilities such as `keyTemplate()`,
+`prefixedKey()`, and `uuidKey()`, but none becomes an implicit or global
+default. Even `uuidKey()` is explicit syntax, not a replacement for current ID
+generation. Strategies may also help generate related keys and validate a key
+before a KV operation without forcing key components into every stored
 document.
 
 ### Instrumentation
@@ -311,6 +343,58 @@ couchset inspect
 Plan commands should be read-only. Apply commands should require an explicit
 action and print a reviewable result. Runtime startup must remain free of
 implicit DDL.
+
+### Compatibility contract
+
+All capabilities in this document can be implemented without breaking current
+`couchset/next` consumers, but additive syntax alone does not guarantee
+compatibility. The implementation contract is:
+
+> A model using none of the new options retains identical runtime behavior,
+> generated keys, SQL++, result shapes, types, errors, consistency defaults,
+> and infrastructure side effects.
+
+The expected risk and activation boundary for each capability is:
+
+| Capability | Compatibility boundary |
+| --- | --- |
+| Search, vector, and geo | New model methods and definitions only; no Search DDL during construction, `ready()`, or CRUD. |
+| Query scopes | Existing `defaultWhere` and soft-delete composition remains unchanged unless a named scope is called. |
+| Plugins and extensions | Activated only by a model's `plugins`; no global registry or import-order behavior. |
+| Lifecycle hooks | No hook runs unless declared on that model; raw SDK and SQL++ paths remain explicit bypasses. |
+| Validator adapters | Existing `validateCreate`, `validateReplace`, and `parse` contracts remain unchanged. |
+| Key strategies | Existing generated and caller-provided ID behavior remains the default when `key` is absent. |
+| Instrumentation | Disabled by default; observers cannot change an operation's result or error. |
+| Bulk operations | New methods over existing operations; partial failure is represented rather than hidden. |
+| Domain methods | Opt-in local extensions; base models are not globally mutated. |
+| CLI | A separate executable with no effect on library startup or runtime behavior. |
+
+Implementation must also avoid source-level TypeScript breaks. In particular:
+
+- Do not add required members to public interfaces that consumers may implement
+  or mock.
+- Do not tighten existing generic constraints solely to support a stronger new
+  API.
+- Do not change `ModelDefinition<T>` inference for definitions that omit new
+  options.
+- Prefer new capability interfaces and intersections where adding a required
+  method to an existing structural interface would break implementors.
+- Avoid wildcard-export name collisions and mandatory runtime dependencies.
+- Keep optional validator and instrumentation integrations in adapters or peer
+  packages rather than requiring Zod, OpenTelemetry, or another ecosystem.
+
+Each capability should carry compatibility tests that prove:
+
+1. Existing `couchset/next` examples continue to compile unchanged.
+2. Generated SQL++ for unchanged operations remains equivalent, with golden
+   snapshots where practical.
+3. New hooks, plugins, validators, strategies, instrumentation, and DDL remain
+   dormant by default.
+4. Generated IDs, explicit IDs, projections, hydration, errors, query ordering,
+   and consistency defaults remain unchanged without opt-in.
+5. Existing public interfaces do not gain new required implementation members.
+6. Every administrative capability has an explicit plan or apply activation
+   point and never executes implicitly during ordinary runtime startup.
 
 ### Guardrails for this horizon
 
