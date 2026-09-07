@@ -21,6 +21,9 @@ References:
 - [Ottoman query builder](https://ottomanjs.com/docs/basic/query-builder)
 - [Ottoman full-text search](https://ottomanjs.com/docs/advanced/fts)
 - [Ottoman transactions](https://ottomanjs.com/docs/advanced/transactions)
+- [Couchbase geospatial Search request properties](https://docs.couchbase.com/server/current/search/search-request-params.html)
+- [Couchbase Node.js SDK Search query types](https://docs.couchbase.com/sdk-api/couchbase-node-client/classes/SearchQuery.html)
+- [CouchSet's earlier geospatial performance investigation](https://www.couchbase.com/forums/t/performance-with-geospacial-queries/31660)
 
 ### Candidate priority
 
@@ -28,6 +31,7 @@ References:
 | --- | --- | --- |
 | P0 | Typed model extensions and plugins | Pure or locally applied extensions over `ModelDefinition<T>` and bound models; no mutable global plugin registry. |
 | P0 | Full-text and vector search | Typed search operations plus reviewable `planSearchIndexes()` and `applySearchIndexPlan()` infrastructure workflows. |
+| P0 | Geospatial search and queries | Typed radius, bounding-box, polygon, and GeoJSON operations with explicit Search-service and GSI execution strategies. |
 | P0 | Reusable typed query scopes | Named and parameterized scopes that compose with `defaultWhere`, soft-delete modes, pagination, projections, and includes. |
 | P1 | Typed lifecycle hooks | Explicit per-model hooks around inserts, replacements, patches, deletes, and reads, with transaction retry behavior documented. |
 | P1 | Runtime-validator adapters | A standard adapter boundary for Standard Schema, Zod, Valibot, and similar libraries, alongside the existing validation hooks. |
@@ -125,6 +129,90 @@ the server-side change before applying it; wait for readiness; and never delete
 or replace an existing search index without explicit opt-in. Vector queries,
 hybrid text/vector search, highlighting, facets, scoring, and raw SDK escape
 hatches can be layered onto the same model-owned surface.
+
+### Geospatial search and queries
+
+Geospatial operations are not currently first-class in CouchSet. Applications
+can express numeric latitude/longitude predicates and distance formulas through
+raw SQL++, or use the Couchbase SDK directly, but CouchSet does not yet provide
+typed geopoints, geoshapes, spatial predicates, distance projections, or search
+index definitions.
+
+Geo should be designed as part of the P0 Search surface while retaining two
+explicit execution strategies:
+
+```ts
+const nearby = await places.geo.withinRadius({
+  field: 'location',
+  center: {lat: 43.65, lon: -79.44},
+  radius: '25km',
+  strategy: 'search',
+});
+
+const visible = await places.geo.withinBox({
+  field: 'location',
+  bounds: {north: 44, south: 43, east: -79, west: -80},
+  strategy: 'gsi',
+});
+```
+
+The Search-service strategy should support:
+
+- `geopoint` fields queried by distance/radius, bounding box, and polygon;
+- `geoshape` fields using GeoJSON Point, LineString, Polygon, MultiPolygon,
+  Circle, Envelope, and GeometryCollection values where supported;
+- spatial relations such as `intersects`, `contains`, and `within`;
+- distance sorting, distance projection, facets, pagination, and raw SDK query
+  escape hatches;
+- scoped and global Search indexes, with their distinct SDK entrypoints;
+- mutation-state consistency options where supported.
+
+The GSI strategy should support:
+
+- typed numeric latitude and longitude fields;
+- index-friendly bounding-box prefilters for map viewports;
+- exact great-circle distance projection and filtering after the coarse
+  bounding box;
+- correct handling of the antimeridian, poles, invalid coordinates, units,
+  and longitude normalization;
+- reusable index definitions for the numeric fields involved.
+
+The strategy must never be chosen invisibly. Search is the natural choice for
+rich shapes and spatial relations. GSI can be attractive for broad map queries,
+large result sets, and application-controlled distance math, but implementing
+correct spatial logic is non-trivial. An `auto` strategy, if ever added, should
+first expose its selected plan and documented constraints.
+
+The earlier CouchSet performance investigation provides an important design
+lesson: a Search `size` limit truncates returned results but does not necessarily
+reduce the number of candidate hits the Search service evaluates. Very broad
+radii can therefore become slower even with a small result limit. CouchSet
+should expose total-hit and timing metadata, allow score calculation to be
+disabled when irrelevant, and document that narrower predicates, appropriately
+sized Search infrastructure, or a GSI prefilter may be required.
+
+Search index planning should understand spatial field mappings:
+
+```ts
+const places = defineModel<Place>({
+  name: 'Place',
+  searchIndexes: [{
+    name: 'places_geo',
+    fields: {
+      location: {type: 'geopoint'},
+      serviceArea: {type: 'geoshape'},
+    },
+  }],
+});
+
+const plan = await db.planSearchIndexes();
+await db.applySearchIndexPlan(plan);
+```
+
+The planner should validate coordinate representation and mappings before
+deployment, distinguish missing, matching, and drifted spatial definitions,
+and preserve the same explicit, non-destructive apply rules proposed for other
+Search indexes.
 
 ### Reusable typed query scopes
 
@@ -239,4 +327,3 @@ implicit DDL.
   infrastructure drift as first-class correctness concerns.
 - Adopt Ottoman's useful affordances without adopting an active-record or
   Mongoose-compatible identity as CouchSet's architectural direction.
-
