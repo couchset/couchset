@@ -102,6 +102,8 @@ const mergeReadArgs = (left: ModelReadArgs, right: ModelReadArgs): ModelReadArgs
     ...snapshot(right),
     ...(left.where && right.where
         ? {where: {$and: [snapshot(left.where), snapshot(right.where)]}}
+        : left.where && right.where === undefined
+        ? {where: snapshot(left.where)}
         : {}),
 });
 

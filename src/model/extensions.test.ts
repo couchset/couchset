@@ -22,6 +22,26 @@ describe('local model extensions', () => {
         expect(Object.values(queries[1].options.parameters)).not.to.include('a');
     });
 
+    it('preserves named predicates when the caller supplies an undefined filter', async () => {
+        const {model, queries} = setup();
+        const scoped = withModelScopes(model, {named: () => ({where: {name: 'kept'}})}).scopes.named();
+        await scoped.findMany({where: undefined});
+        expect(Object.values(queries[0].options.parameters)).to.include.members(['fixed', 'kept']);
+        expect(scoped.inspect().where).to.deep.equal({name: 'kept'});
+    });
+
+    it('preserves accumulated predicates through a scope with an undefined filter', async () => {
+        const {model, queries} = setup();
+        const scoped = withModelScopes(model, {
+            named: (name: string) => ({where: {name}}),
+            optional: () => ({where: undefined, limit: 2}),
+        }).scopes.named('first').scopes.optional().scopes.named('second');
+        expect(scoped.inspect().where).to.deep.equal({$and: [{name: 'first'}, {name: 'second'}]});
+        await scoped.findMany();
+        expect(Object.values(queries[0].options.parameters)).to.include.members(['fixed', 'first', 'second']);
+        expect(queries[0].options.parameters.cs_limit).to.equal(2);
+    });
+
     it('copies scope values and inspection data and lets call options override', async () => {
         const {model, queries} = setup();
         const contribution = {where: {name: 'original'}, limit: 5};
