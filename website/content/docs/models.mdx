@@ -1,0 +1,46 @@
+---
+title: Models and definitions
+description: Declare keyspaces, metadata, indexes, keys, and typed registries.
+---
+
+```ts
+const orders = new Model('Order', {
+  scope: 'sales', collection: 'orders', softDelete: true,
+  dateFields: ['submittedAt'],
+  indexes: [{ name: 'idx_order_status', fields: ['tenantId', 'status'] }],
+});
+```
+
+`name` becomes `_type`. `scope` and `collection` select the physical keyspace; omitted parts use `_default`. Writes add `id`, `createdAt`, `updatedAt`, `_type`, `_scope`, and, for soft deletion, `deleted`.
+
+<Callout type="warn" title="defaultWhere takes precedence over soft delete">
+If `defaultWhere` is truthy, it replaces CouchSet's automatic `{deleted: {$isMissing:true}}` default; the two are not combined. To use both, write one explicit `$and` predicate containing your tenant condition and the deleted-is-missing condition. `withDeleted()` and `withoutDefaultWhere()` then remove the entire default, while `onlyDeleted()` replaces it with `{deleted: {$eq:true}}`.
+</Callout>
+
+## Typed definitions and registry
+
+```ts
+type Order = { id: string; tenantId: string; status: string; submittedAt?: Date };
+const definition = defineModel<Order>({
+  name: 'Order', scope: 'sales', collection: 'orders',
+  codecs: { submittedAt: dateCodec },
+  collectionSettings: { maxExpiry: 86_400, history: false },
+  indexes: [{ name: 'idx_order_status', fields: ['tenantId', { submittedAt: 'DESC' }] }],
+});
+```
+
+Definitions perform no I/O and can be reused across clients. `db.model(definition)` binds and registers; `db.definitions()` lists the manifest; `db.registerModel()` adds a runtime definition.
+
+## Consumer-defined keys
+
+```ts
+key: {
+  create: (user) => `user::${user.email.toLowerCase()}`,
+  parse: (id) => id.startsWith('user::') ? id.slice(6) : null,
+  explicitId: 'validate',
+}
+```
+
+`create` runs synchronously only when insert/upsert has no ID. Explicit IDs pass by default; `validate` requires a truthy synchronous parse result and `reject` refuses them. Reads and existing keys are not rewritten. Transaction inserts need explicit IDs, so `reject` disallows them.
+
+Bound models expose `getCollection()`, `bucket()`, `keyspace()`, and `from(alias?)` for low-level integrations.

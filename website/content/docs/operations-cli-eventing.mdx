@@ -1,0 +1,43 @@
+---
+title: Operations, CLI, and Eventing
+description: Apply reviewed plans, manage Eventing, and use time-series helpers.
+---
+
+## CLI
+
+```bash
+npx couchset --help
+npx couchset model User
+npx couchset inspect --config ./couchset.config.cjs
+npx couchset collections plan --config ./couchset.config.cjs
+npx couchset collections apply --config ./couchset.config.cjs
+npx couchset indexes plan --config ./couchset.config.cjs
+npx couchset indexes apply --config ./couchset.config.cjs --plan ./plan.json
+npx couchset search-indexes plan --config ./couchset.config.cjs
+npx couchset search-indexes apply --config ./couchset.config.cjs --plan ./search-plan.json --allow-replace
+npx couchset eventing plan --config ./couchset.config.cjs
+```
+
+`model` only prints. Admin commands load trusted code exporting registered `db`; export `eventing` for its plan. Search replacement also requires `--allow-replace`. There is no import-time DDL, automatic index drop, or automatic Eventing deployment/prune. The CLI closes its client.
+
+Plan/apply commands print JSON. Collection plans return `{scope, collection, status:'create'|'matching'}[]`; collection apply is create-only and uniquely needs no plan file. GSI plan items contain `status` (`create`, `matching`, `replace`), logical definition, keyspace/target, physical `createAs`, optional `replaces`, and reason. Search plan items likewise describe create/match/replace and retain catalog identity so stale plans fail. Index apply consumes exactly the reviewed JSON; GSI old-index removal is not exposed by the CLI, and Search replacement stays gated by `--allow-replace`.
+
+## Eventing
+
+```ts
+const audit = defineEventingFunction({name:'audit_orders', code:'function OnUpdate(doc, meta) { log(meta.id); }',
+  sourceKeyspace:{bucket:'app',scope:'sales',collection:'orders'}});
+const eventing = db.eventing({namespace:'billing', metadataKeyspace:{bucket:'app',scope:'eventing',collection:'metadata'}, definitions:[audit]});
+await eventing.plan(); await eventing.apply();
+await eventing.pause('audit_orders'); await eventing.remove('audit_orders');
+```
+
+Metadata collection must already exist. All-definition apply may prune only stale names owned by the namespace; single-definition apply never prunes. Source/metadata keyspace drift erases timers/checkpoints and remains `requiresRecreate` until `allowRecreate:true`. Reports group created, updated, resumed, unchanged, pruned, paused, removed, and requiresRecreate outcomes.
+
+`EventingOptions` requires `namespace` and `metadataKeyspace`; `definitions` and `functions` are aliases. Optional `lifecycleTimeoutMs` bounds convergence and `lifecyclePollIntervalMs` defaults to 250 ms. A definition requires `name`, JavaScript `code`, and `sourceKeyspace`; it can add schema enforcement, bucket/URL/constant bindings, and partial SDK settings. `plan()` is read-only and reports desired/live drift plus stale owned functions. `apply()` reconciles all definitions and may prune owned stale functions; `apply(definition)` reconciles only one. `apply({allowRecreate:true})` or the corresponding single-definition overload opts into destructive keyspace recreation.
+
+Every mutating call returns `{outcomes,created,updated,resumed,unchanged,pruned,paused,removed,requiresRecreate}`. Each outcome has `action`, ordered `actions`, logical/physical names, and optional `timerStateLost`/`message`. `pause` is non-destructive; `remove` undeploys then deletes and loses timers/checkpoints.
+
+## Time series
+
+`TimeSeriesModel` chunks readings by hour/day/month for Couchbase `_timeseries`. `appendChunk` upserts, `range` queries, while `buildChunk`/`rangeQuery` are planning helpers. Intervals accept milliseconds or `ms`, `s`, `m`, `h`, `d`. Aggregates include AVG, SUM, MIN, MAX, COUNT. Concurrent writers to one chunk need an application concurrency strategy.

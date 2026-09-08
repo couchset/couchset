@@ -1,13 +1,33 @@
 ---
-title: Hello World
-description: Your first document
+title: CouchSet documentation
+description: A typed Couchbase model layer with explicit operational primitives.
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+CouchSet is a Couchbase model layer for TypeScript and Node.js. It keeps key-value and SQL++ capabilities visible while adding model metadata, typed reads, validation, relationships, transactions, Search, Eventing, and operational planning.
 
-## What is Next?
+<Callout type="info" title="Choose the entrypoint deliberately">
+The package root, `couchset`, is the compatibility-oriented legacy API. New applications should normally import from `couchset/next`, which contains the modern singleton API and client-owned primitives described here.
+</Callout>
+
+## Start here
 
 <Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
+  <Card title="Install and choose an API" href="/docs/getting-started" description="Create a model and perform the first write and read." />
+  <Card title="Connect" href="/docs/connection" description="Lifecycle, environment variables, health, and shutdown." />
+  <Card title="Define models" href="/docs/models" description="Definitions, registries, keys, collections, and indexes." />
+  <Card title="Read and write" href="/docs/crud-and-queries" description="CRUD, safe filters, projections, pagination, and SQL++." />
 </Cards>
+
+## Capability map
+
+| Need | Read |
+| --- | --- |
+| Validation, dates, and transforms | [Validation and codecs](./validation-and-codecs) |
+| Typed relationships and document methods | [Relationships and hydration](./relationships-and-hydration) |
+| Collections, indexes, transactions, and CAS | [Provisioning and transactions](./provisioning-and-transactions) |
+| Plugins, hooks, scopes, bulk, and instrumentation | [Extensions](./extensions) |
+| Full-text, vector, hybrid, and geo | [Search and geospatial](./search-and-geo) |
+| CLI, Eventing, and time series | [Operations, CLI, and Eventing](./operations-cli-eventing) |
+| Exports and concise signatures | [API reference](./api-reference) |
+
+CouchSet does not create collections or indexes merely because a model was imported or bound. Provisioning, replacement, cleanup, and Eventing deployment are explicit.

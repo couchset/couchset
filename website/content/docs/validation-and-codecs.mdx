@@ -1,0 +1,35 @@
+---
+title: Validation and codecs
+description: Validate writes and transform application values to Couchbase JSON.
+---
+
+## Dates and field codecs
+
+`schema: {happenedAt: 'date'}` and `dateFields: ['metadata.receivedAt']` parse stored values into `Date`. Generated date metadata is automatic. A codec handles arbitrary types:
+
+```ts
+const invoices = defineModel<Invoice>({
+  name: 'Invoice',
+  codecs: {
+    issuedAt: dateCodec,
+    total: {
+      toDatabase: (v: Money) => ({ amount: v.amount, currency: v.currency }),
+      fromDatabase: (v) => new Money(v),
+    },
+  },
+});
+```
+
+Codecs run on insert, upsert, replacement, matching `$set` fields, and reads. A field cannot also use a date schema/dateFields transform. Partial projections parse only returned fields; included models use their own codecs.
+
+## Validation
+
+`validateCreate` covers insert/upsert after metadata is added; `validateReplace` covers replacement. Each can be async and return a transformed document. Patch and raw mutation intentionally skip full-document validation. `parse` is an output transform, not storage validation.
+
+```ts
+const validated = defineModel<User>({
+  name: 'User', plugins: [withModelValidator(userStandardSchema)],
+});
+```
+
+`withModelValidator()` adapts Standard Schema v1, supports async validation and transformed output, and throws `ModelValidationError` with structured `issues`. Generated metadata survives validators that strip unknown keys. Existing validators conflict instead of being replaced. Transaction validation can repeat, so keep it deterministic and side-effect free.

@@ -1,0 +1,40 @@
+---
+title: Relationships and hydration
+description: Compose typed includes and opt into active document objects.
+---
+
+## Includes
+
+```ts
+const orders = await orderModel.findMany({
+  sourceAlias: 'order',
+  include: [
+    {
+      as: 'customer', model: customerModel, type: 'leftJoin',
+      on: {
+        left: joinField('order.customerId'), op: '$eq',
+        right: joinField('customer.id'),
+      },
+      select: ['id', 'name'],
+    },
+  ],
+});
+```
+
+Every include requires `as` and exactly one relationship form: `on` (structured ANSI predicate), trusted `onRaw`, `key` (one ON KEYS expression), or `keys` (array ON KEYS expression). Do not mix ANSI (`on`/`onRaw`) and ON KEYS (`key`/`keys`) includes in one read. `joinField(path)` makes a field operand explicit; bare right-side values are parameters.
+
+Types are `join`, `leftJoin`, `nest`, and `leftNest`. With no `type`, `key` defaults to JOIN and `keys` to NEST; `optional: true` selects the left variant. Joins return a related object, while nests return arrays and normalize missing values to `[]`. `select` projects related top-level fields. Aliases and paths are validated, root-field collisions throw, typed definitions infer include/projection shapes, and related models parse their codecs. State relationship predicates explicitly—model filters are not authorization.
+
+## Hydration
+
+Plain reads return plain objects. `findDocById` or `hydrate(data)` adds `save`, `patch`, `reload`, `delete`, and `toJSON`:
+
+```ts
+const user = await users.findDocById<User>(id);
+user.displayName = 'Jane';
+await user.save();       // full replacement
+await user.patch({ $inc: { visits: 1 } });
+await user.reload();
+```
+
+The model reference is non-enumerable. Prefer patch for partial changes and CAS when concurrent replacement matters. `withDocumentMethods(document, methods)` makes a shallow copy with non-enumerable domain methods, refuses collisions, and leaves the original/global prototypes unchanged. Use normal functions for typed `this`.

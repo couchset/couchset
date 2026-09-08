@@ -1,0 +1,48 @@
+---
+title: Connections and clients
+description: Configure singleton or client-owned connections and manage their lifecycle.
+---
+
+## Singleton lifecycle
+
+Models may be declared before connecting. Operations wait for the shared connection.
+
+```ts
+import { couchset, health, ping, ready, shutdown } from 'couchset/next';
+await couchset({ connectionString, username, password, bucketName,
+  autoReconnect: true, reconnectIntervalMs: 5_000 });
+await ready();
+await ping();
+console.log(health());
+await shutdown();
+```
+
+Reconnect defaults to enabled. `COUCHSET_RECONNECT=false`, `0`, or `no` disables it; `COUCHSET_RECONNECT_INTERVAL_MS` changes the default 5,000 ms interval. The helpers are also properties of `couchset`.
+
+## Environment starters
+
+`startCouchbase()` and `startCouchbaseServerless()` read `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, and optional `COUCHBASE_PROXY`. One `DB_URL` takes precedence:
+
+```bash
+DB_URL=couchbase://user:password@localhost:11210/app
+DB_URL=couchbases://user:password@cb.example.com/app
+```
+
+Explicit starter options override environment values. Use `couchbases://` for TLS and percent-encode reserved URL characters. `parseDatabaseUrl()`, `getConnectionOptions()`, and `connectionOptions` expose the same parsing.
+
+## Client-owned lifecycle
+
+```ts
+const db = createCouchsetClient({
+  connectionString, username, password, bucketName: 'app', models: [users],
+});
+await db.ready();
+const model = db.model(users);
+await db.shutdown();
+```
+
+Each client owns its connection and registry. It does not use the singleton reconnect loop or retry arbitrary writes. Tests may inject a connection, cluster/bucket, or `connect(settings)` through `dependencies`.
+
+<Callout type="warn" title="Binding is not provisioning">
+Binding or registering a model performs no I/O unless dynamic registration receives an explicit `provision` option.
+</Callout>

@@ -1,0 +1,44 @@
+---
+title: Provisioning and transactions
+description: Create resources explicitly, plan index drift, and use transaction or CAS safety.
+---
+
+## Explicit provisioning
+
+```ts
+await db.ensureCollections();
+await db.ensureIndexes({ waitForIndexes: true });
+```
+
+These require appropriate Manage Scopes/query-index privileges. Collection provisioning creates only missing resources; it never updates, renames, or drops. `_default` is not created. Conflicting settings for the same target fail. Index ensure is create-only. Singleton models also support `indexStatements()`, `ensureIndexes()`, and top-level/static `ensureIndexes`.
+
+```ts
+const plan = await db.planIndexes(); // create | matching | replace
+await db.applyIndexPlan(plan);
+await db.applyIndexPlan(plan, { dropReplaced: true });
+```
+
+Drift creates a versioned replacement and waits for online before optional old-index removal. Dropping is affirmative. Runtime definitions can use `db.registerModel(definition, {provision:{collections:true,indexes:true,waitForIndexes:true}})`.
+
+## Transactions
+
+```ts
+await db.transaction(async (tx) => {
+  const sessions = tx.model(sessionDefinition);
+  const session = await sessions.getById(id);
+  if (session) await sessions.remove(session);
+});
+```
+
+Transaction models expose attempt-bound get/insert/replace/remove; insert needs an explicit ID. Couchbase may retry the callback. Do not perform irreversible external effects inside it. Hooks and validation can also repeat. Commit-ambiguous errors surface to the caller.
+
+## CAS
+
+```ts
+const current = await model.getWithCas(id);
+await model.replaceIfCas(id, nextValue, current.cas);
+const result = await model.consumeOnce(id, current.cas);
+// consumed | missing | conflict
+```
+
+`consumeOnce` makes one conditional remove without rereading/retrying. `createCouchsetTestFixture()` provisions an isolated model and returns explicit `cleanup()`; always run it in teardown.

@@ -1,0 +1,40 @@
+---
+title: Search, vector, and geospatial
+description: Full-text, vector, hybrid, and geographic queries.
+---
+
+```ts
+const places = defineModel<Place>({name:'Place', searchIndexes:[{
+  name:'places_search', scoped:true, fields:{
+    name:{type:'text',store:true}, location:{type:'geopoint'},
+    boundary:{type:'geoshape'}, embedding:{type:'vector',dims:384},
+  },
+}]});
+db.model(places);
+const plan = await db.planSearchIndexes();
+await db.applySearchIndexPlan(plan);
+```
+
+Planning is read-only. Drift replacement needs `allowReplace:true`, may rebuild the index, and rejects stale catalog UUIDs. No automatic drop occurs. Vector/scoped features require compatible Couchbase versions and Search service.
+
+```ts
+const search = db.search(places, 'places_search');
+const textResult = await search.match('name', 'coffee');
+const vectorResult = await search.vector('embedding', vector, {filter, searchQuery});
+await search.withinRadius({field:'location',center:{lat:43.65,lon:-79.44},radius:'5km',strategy:'search'});
+```
+
+Every method returns the SDK `SearchResult` (`rows`/hits plus metadata), not hydrated documents; stored fields remain unknown. `query(raw, sdkOptions)` exposes facets, highlighting, sort, `limit`/`skip`, and consistency. `match` requires a declared text mapping. `vector` requires finite values matching the declared `dims`; `numCandidates` defaults to 10 and must be a positive integer, `filter` defaults to match-all, and optional `searchQuery` adds hybrid text/Search matching. Similarity defaults to `dot_product` in a vector mapping.
+
+Search adds `_type` but rejects definitions with SQL++ `defaultWhere` or soft deletion; supply explicit filters. Points use `{lat,lon}`, GeoJSON uses `[lon,lat]`.
+
+| Method | Required arguments |
+| --- | --- |
+| `withinRadius` | `{field, center, radius, strategy:'search'}` on `geopoint`; radius accepts values such as `5km`, `3mi`, or `500m` |
+| `withinBox` | `{field, bounds:{north,south,east,west}, strategy:'search'}` on `geopoint` |
+| `withinPolygon` | `{field, points:[at least 3 GeoPoint], strategy:'search'}` on `geopoint` |
+| `shape` | `{field, geometry, relation, strategy:'search'}` on `geoshape`; relation is `intersects`, `within`, or `contains` |
+
+Each accepts SDK `SearchQueryOptions` as the second argument.
+
+`db.geo(definition)` provides explicit `strategy:'gsi'` box/radius reads over numeric `field.lat`/`field.lon`. `withinBox({field,bounds,strategy:'gsi',where?,limit?,offset?,queryOptions?})` returns parsed model documents and inherits the model read default limit of 10. `withinRadius({field,center,radius,strategy:'gsi',...})` defaults to limit 20/offset 0, applies a bounding prefilter plus great-circle SQL++, and returns `{document,distanceKm}[]` ordered by distance then document ID. It retains the definition's default-or-soft-delete precedence and parses codecs. Provision numeric GSI indexes. `geoPoint`, `geoBounds`, `geoRadiusKm`, and `radiusBounds` validate/derive inputs.
