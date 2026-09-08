@@ -67,6 +67,7 @@
         "test:types": "npm run build && node scripts/check-read-types.js",
         "test:unit": "mocha \"src/**/*.test.ts\" --ignore src/index.test.ts --ignore src/index.serverless.test.ts --exit",
         "test:integration": "mocha src/index.test.ts --exit",
+        "test:roadmap:live": "npm run build && tsx scripts/test-plugins-live.ts && tsx scripts/test-search-live.ts && tsx scripts/test-roadmap-live.ts && tsx scripts/test-cli-live.ts",
         "test:serverless": "mocha src/index.serverless.test.ts --exit",
         "prepublishOnly": "npm run build",
         "eslint": "eslint ./src --fix --ext=ts"

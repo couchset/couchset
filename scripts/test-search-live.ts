@@ -42,7 +42,7 @@ async function main() {
         assert.equal(radius.length, 1);
         await db.applySearchIndexPlan(await db.planSearchIndexes());
         search = true;
-        const end = Date.now() + 15000;
+        const end = Date.now() + 60000;
         for (;;) {
             const result = await db.search(definition, searchName).withinRadius({
                 strategy: 'search',
