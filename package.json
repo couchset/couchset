@@ -1,9 +1,11 @@
 {
     "name": "couchset",
-    "version": "0.5.2",
+    "version": "0.6.0",
     "description": "Couchbase ORM",
     "private": false,
-    "bin": {"couchset": "bin/couchset.js"},
+    "bin": {
+        "couchset": "bin/couchset.js"
+    },
     "main": "dist/legacy/index.js",
     "types": "dist/legacy/index.d.ts",
     "exports": {
