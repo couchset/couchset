@@ -117,6 +117,10 @@ await users.deleteById(created.id, {hard: true});
 
 ## Modern Client Primitives
 
+Additional opt-in APIs: [model plugins, scopes, hooks and keys](./docs/model-plugins.md),
+[Search, vector and geospatial queries](./docs/search-and-geo.md), and
+[bulk operations, instrumentation and the CLI](./docs/operations.md).
+
 `couchset/next` also offers a client-owned API for typed manifests, explicit administrative work, safe operational plans, and Eventing. These are deliberately separate from the singleton `Model` API above.
 
 ### Declarative models

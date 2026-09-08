@@ -53,6 +53,7 @@ import {
     ModelIndexDefinition,
 } from './indexes';
 import type {ParseHook, ValidationHook} from './validation';
+import type {ModelKeyStrategy} from './keys';
 import {parseDateFields, schemaFromDateFields} from './validation';
 
 /** A small connection surface used by client-bound models. */
@@ -108,6 +109,7 @@ export interface DeleteByIdOptions extends RemoveOptions {
 }
 
 export interface ModalOptions {
+    key?: ModelKeyStrategy<any>;
     scope?: string;
     collection?: string;
     schema?: Record<string, SchemaTypes>;
@@ -150,6 +152,7 @@ export class Model {
     private codecs: Record<string, FieldCodec<any, any>> = {};
     private readonly connection?: ModelConnection;
     private indexes: ModelIndexDefinition[] = [];
+    private keyStrategy?: ModelKeyStrategy<any>;
     schema: Record<string, SchemaTypes> = {
         createdAt: 'date',
         updatedAt: 'date',
@@ -160,6 +163,7 @@ export class Model {
         this.collectionName = name;
         this.connection = connection;
         if (options) {
+            this.keyStrategy = options.key;
             const hasScope = Object.prototype.hasOwnProperty.call(options, 'scope');
             const hasCollection = Object.prototype.hasOwnProperty.call(options, 'collection');
             this.scope = (options && options.scope) || '_default';
@@ -338,6 +342,7 @@ export class Model {
 
     private writeContext(): ModelWriteContext {
         return {
+            key: this.keyStrategy,
             collection: this.getCollection(),
             collectionName: this.collectionName,
             scope: this.scope,
@@ -351,6 +356,7 @@ export class Model {
 
     private cloneWithDefaultWhereMode(mode: DefaultWhereMode): Model {
         const options: ModalOptions = {
+            key: this.keyStrategy,
             codecs: this.codecs,
             dateFields: this.dateFields,
             defaultWhere: this.defaultWhere,

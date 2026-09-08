@@ -9,7 +9,7 @@ module.exports = {
     ],
     parser: '@typescript-eslint/parser',
     parserOptions: {
-        project: './tsconfig.json',
+        project: './tsconfig.eslint.json',
     },
     plugins: ['@typescript-eslint', 'import', 'json', 'simple-import-sort'],
     rules: {
@@ -41,7 +41,7 @@ module.exports = {
 
     },
     "overrides": [{
-        "files": ["src/**/*.ts", "next/**/*.d.ts"],
+        "files": ["src/**/*.ts", "scripts/**/*.ts", "next/**/*.d.ts"],
         "env": { "node": true },
         "rules": {
             "simple-import-sort/imports": "off",

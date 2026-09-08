@@ -12,10 +12,13 @@ import {generateUUID} from '../uuid';
 
 import {applyTtlOptions, TtlOptions} from './ttl';
 import {applyValidation, ValidationHook} from './validation';
+import {resolveModelKey} from './keys';
+import type {ModelKeyStrategy} from './keys';
 
 import type {AutoModelFields, UpdateOptions} from './index';
 
 export interface ModelWriteContext {
+    key?: ModelKeyStrategy<any>;
     collection: Collection;
     collectionName: string;
     scope: string;
@@ -48,12 +51,13 @@ export const modelDocument = <T>(
     data: T,
     createdAt?: Date
 ): T & AutoModelFields => {
-    const id = generateUUID();
+    const id = context.key ? resolveModelKey(context.key, data) : generateUUID();
     const timestamp = now();
 
     return {
         id,
         ...data,
+        ...(context.key ? {id} : {}),
         createdAt: createdAt || timestamp,
         updatedAt: timestamp,
         _type: context.collectionName,

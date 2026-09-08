@@ -3,6 +3,7 @@
     "version": "0.5.2",
     "description": "Couchbase ORM",
     "private": false,
+    "bin": {"couchset": "bin/couchset.js"},
     "main": "dist/legacy/index.js",
     "types": "dist/legacy/index.d.ts",
     "exports": {
@@ -48,6 +49,7 @@
         "./*": "./*"
     },
     "files": [
+        "bin/",
         "CHANGELOG.md",
         "docs/",
         "dist/",

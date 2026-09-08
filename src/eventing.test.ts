@@ -23,6 +23,19 @@ const handler = (changes: Partial<EventingDefinition> = {}): EventingDefinition 
     ...changes,
 });
 
+describe('Eventing read-only plans', () => {
+    it('reports missing and matching definitions without administrative mutations', async () => {
+        const manager = new FakeEventingManager();
+        const eventing = createEventingWithManager({namespace: 'plan_test', metadataKeyspace: metadata, manager, definitions: [handler()]});
+        expect((await eventing.plan()).functions[0].action).to.equal('create');
+        expect(manager.operations).to.have.length(0);
+        await eventing.apply();
+        manager.operations.length = 0;
+        expect((await eventing.plan()).functions[0].action).to.equal('matching');
+        expect(manager.operations).to.have.length(0);
+    });
+});
+
 class FakeEventingManager implements EventingFunctionManagerLike {
     public functions: any[] = [];
     public operations: string[] = [];

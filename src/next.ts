@@ -12,6 +12,43 @@ import {escapeIdentifier, keyspaceIdentifier} from './model/keyspace';
 import type {SortType} from './query/interface/query.types';
 import {buildWhereExpr} from './query/helpers/builders';
 import {generateUUID} from './uuid';
+import {composeModelPlugins} from './model/plugins';
+import type {ModelPlugin} from './model/plugins';
+import {attachModelInstrumentation} from './model/instrumentation';
+import type {ModelInstrumentation} from './model/instrumentation';
+import type {ModelKeyStrategy} from './model/keys';
+import {attachModelHooks} from './model/lifecycle';
+import type {ModelHooks} from './model/lifecycle';
+import {ModelGeo} from './model/geo';
+import {ModelSearch, planModelSearchIndexes, applyModelSearchPlan} from './model/search';
+import type {ModelSearchIndex, SearchIndexPlan, SearchRuntime} from './model/search';
+
+export {defineModelPlugin} from './model/plugins';
+export type {ModelPlugin, ModelPluginContribution} from './model/plugins';
+export {
+    ScopedModel,
+    withModelScopes,
+    withModelMethods,
+    withDocumentMethods,
+} from './model/extensions';
+export {bulkMap, withModelBulk} from './model/bulk';
+export type {BulkOptions, BulkItem} from './model/bulk';
+export type {ModelInstrumentation, ModelOperationEvent} from './model/instrumentation';
+export type {ModelScopes} from './model/extensions';
+export type {ModelKeyStrategy} from './model/keys';
+export {withModelValidator, ModelValidationError} from './model/validator-adapter';
+export type {StandardModelSchema} from './model/validator-adapter';
+export {ModelAfterHookError} from './model/lifecycle';
+export type {ModelHooks, ModelHookContext} from './model/lifecycle';
+export {ModelGeo, geoPoint, geoBounds, geoRadiusKm, radiusBounds} from './model/geo';
+export type {GeoPoint, GeoBounds, GeoReadOptions} from './model/geo';
+export {ModelSearch, buildModelSearchIndex} from './model/search';
+export type {
+    ModelSearchField,
+    ModelSearchIndex,
+    SearchIndexPlan,
+    SearchPlanItem,
+} from './model/search';
 
 export {joinField} from './model/include';
 export type {JoinField, JoinPredicate, IncludeDefinition, IncludeType} from './model/include';
@@ -46,8 +83,12 @@ export interface TypedModelIndexDefinition<T> extends Omit<ModelIndexDefinition,
     fields?: TypedIndexField<T>[];
 }
 
-export interface ModelDefinition<T = any> extends Omit<ModalOptions, 'codecs' | 'indexes'> {
+export interface ModelDefinition<T = any> extends Omit<ModalOptions, 'codecs' | 'indexes' | 'key'> {
     name: string;
+    key?: ModelKeyStrategy<T>;
+    hooks?: ModelHooks<T>;
+    searchIndexes?: ModelSearchIndex[];
+    plugins?: ModelPlugin<T>[];
     collectionSettings?: ModelCollectionSettings;
     codecs?: ModelCodecs<T>;
     indexes?: TypedModelIndexDefinition<T>[];
@@ -100,7 +141,7 @@ export const defineModel = <T = any>(definition: ModelDefinition<T>): ModelDefin
         throw new Error('defineModel requires a non-empty name');
     }
 
-    return {...definition};
+    return composeModelPlugins(definition);
 };
 
 export interface CouchsetClientDependencies {
@@ -114,6 +155,7 @@ export interface CouchsetClientDependencies {
 }
 
 export interface CouchsetClientOptions extends Partial<CouchsetArgs> {
+    instrumentation?: ModelInstrumentation;
     models?: Array<ModelDefinition<any>>;
     dependencies?: CouchsetClientDependencies;
 }
@@ -284,11 +326,13 @@ class DirectConnection implements ModelConnection {
  * does not alter the legacy singleton or register models globally.
  */
 export class CouchsetClient {
+    private readonly instrumentation?: ModelInstrumentation;
     private readonly connection: ModelConnection;
     private readonly registered = new Map<string, RegisteredModel<any>>();
     private readonly settings: CouchsetArgs;
 
     constructor(options: CouchsetClientOptions = {}) {
+        this.instrumentation = options.instrumentation;
         this.settings = defaultSettings(options);
         const dependencies = options.dependencies || {};
 
@@ -326,6 +370,26 @@ export class CouchsetClient {
         return this;
     }
 
+    public async planCollections(): Promise<
+        Array<{scope: string; collection: string; status: 'create' | 'matching'}>
+    > {
+        await this.ready();
+        const scopes = await this.connection.bucket.collections().getAllScopes();
+        return this.targets().map((target) => ({
+            scope: target.scope,
+            collection: target.collection,
+            status: scopes.some(
+                (scope: any) =>
+                    scope.name === target.scope &&
+                    scope.collections.some(
+                        (collection: any) => collection.name === target.collection
+                    )
+            )
+                ? 'matching'
+                : 'create',
+        }));
+    }
+
     public async shutdown(): Promise<void> {
         const shutdown = (this.connection as any).shutdown;
         if (typeof shutdown === 'function') {
@@ -335,6 +399,44 @@ export class CouchsetClient {
 
     public definitions(): ModelDefinition<any>[] {
         return Array.from(this.registered.values()).map(({definition}) => definition);
+    }
+
+    public geo<T>(definition: ModelDefinition<T>): ModelGeo<T> {
+        const resolved = definition.plugins?.length ? defineModel(definition) : definition;
+        return new ModelGeo(this.model(resolved), resolved);
+    }
+
+    public search<T>(definition: ModelDefinition<T>, indexName: string): ModelSearch<T> {
+        const resolved = definition.plugins?.length ? defineModel(definition) : definition;
+        this.model(resolved);
+        const index = resolved.searchIndexes?.find((item) => item.name === indexName);
+        if (!index) throw new Error(`Undeclared Search index ${indexName}`);
+        return new ModelSearch(this.searchRuntime(), resolved, index);
+    }
+
+    public planSearchIndexes(): Promise<SearchIndexPlan> {
+        return planModelSearchIndexes(this.searchRuntime(), this.definitions());
+    }
+
+    public applySearchIndexPlan(
+        plan: SearchIndexPlan,
+        options?: {allowReplace?: boolean; timeoutMs?: number}
+    ): Promise<void> {
+        return applyModelSearchPlan(this.searchRuntime(), plan, options);
+    }
+
+    private searchRuntime(): SearchRuntime {
+        const client = this;
+        return {
+            ready: () => client.ready(),
+            bucketName: this.settings.bucketName,
+            get cluster() {
+                return client.connection.cluster;
+            },
+            get bucket() {
+                return client.connection.bucket;
+            },
+        };
     }
 
     /**
@@ -347,6 +449,7 @@ export class CouchsetClient {
 
     /** Bind and register a definition without provisioning or index DDL. */
     public model<T>(definition: ModelDefinition<T>): TypedModel<T> {
+        if (definition.plugins?.length) definition = defineModel(definition);
         const identity = modelIdentity(definition);
         const existing = this.registered.get(identity);
 
@@ -356,6 +459,8 @@ export class CouchsetClient {
         }
 
         const model = new Model(definition.name, definition as ModalOptions, this.connection);
+        attachModelHooks(model, definition.hooks);
+        attachModelInstrumentation(model, definition.name, this.instrumentation);
         this.registered.set(identity, {definition, model});
         return model as TypedModel<T>;
     }
@@ -637,7 +742,19 @@ export class CouchsetClient {
     ): Promise<T> {
         await this.ready();
         let result: T;
+        let attemptNumber = 0;
         await (this.connection.cluster as any).transactions().run(async (attempt: any) => {
+            attemptNumber++;
+            if (attemptNumber > 1 && this.instrumentation?.onRetry) {
+                try {
+                    Promise.resolve(
+                        this.instrumentation.onRetry({
+                            operation: 'transaction',
+                            attempt: attemptNumber,
+                        })
+                    ).catch(() => {});
+                } catch (_) {}
+            }
             result = await callback(new CouchsetTransaction(this, attempt));
         });
         return result as T;
@@ -825,7 +942,12 @@ export class CouchsetTransaction {
     constructor(private readonly client: CouchsetClient, private readonly attempt: any) {}
 
     public model<T>(definition: ModelDefinition<T>): TransactionModel<T> {
-        return new TransactionModel<T>(this.client.model(definition), this.attempt);
+        const resolved = definition.plugins?.length ? defineModel(definition) : definition;
+        return attachModelHooks(
+            new TransactionModel<T>(this.client.model(resolved), this.attempt),
+            resolved.hooks,
+            true
+        );
     }
 
     public query<TRow = any>(statement: string, options?: any): Promise<{rows: TRow[]}> {
