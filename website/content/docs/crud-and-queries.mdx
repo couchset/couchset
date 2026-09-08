@@ -1,0 +1,58 @@
+---
+title: CRUD and queries
+description: Key-value writes, filters, projections, pagination, TTL, and raw SQL++.
+---
+
+## Writes
+
+```ts
+const created = await users.insert({ email: 'jane@example.com', visits: 0 });
+await users.upsert({ id: created.id, email: 'jane@example.com', visits: 1 });
+await users.replaceById(created.id, { email: 'jane@example.com', visits: 2 });
+await users.patchById(created.id, {
+  $set: { displayName: 'Jane' }, $unset: ['legacy'], $inc: { visits: 1 },
+});
+await users.incrementById(created.id, 'visits', 1);
+await users.deleteById(created.id, { hard: true });
+```
+
+`replaceById` is a full replacement; `{silent: true}` suppresses its new `updatedAt`. Patch uses subdocument operations then returns a fresh parsed document. `mutateById(id, specs, options)` exposes raw SDK specs and results, requires a non-empty list, and bypasses full validation. SDK options pass through. Insert/upsert also accept `expiry` or compatible `preserveExpiry` TTL behavior.
+
+## Reads and filters
+
+```ts
+const page = await users.page({
+  where: { tenantId: 'acme', age: { $gte: 18 }, status: { $eq: 'active' } },
+  select: ['id', 'email'], orderBy: { createdAt: 'DESC', id: 'ASC' }, limit: 25, page: 0,
+});
+// { items, hasNext, pageInfo: { limit, page, offset, nextPage, nextOffset } }
+```
+
+`findMany`, `findOne`, `exists`, `count`, and `page` always constrain `_type`. They apply `defaultWhere` when present; otherwise a soft-delete model applies its deleted-is-missing default. They do not combine those two defaults automatically. Values are parameterized and identifiers escaped. Projection narrows typed results. `findMany` and `page` default to `limit: 10` and `page: 0`. Offset defaults to `page * limit`; an explicit `offset` wins and `pageInfo` reports both values. Page fetches use limit + 1 to derive `hasNext`, `nextPage`, and `nextOffset`. Choose an `orderBy` containing a stable unique field for changing data.
+
+### Filter operators
+
+| Shape | Operators |
+| --- | --- |
+| Scalar shorthand | `{status: 'active'}` |
+| Comparison | `$eq`, `$neq`, `$gt`, `$gte`, `$lt`, `$lte` |
+| String | `$like`, `$notLike` |
+| Range | `$btw: [low, high]`, `$notBtw: [low, high]` |
+| Presence/value | `$isNull`, `$isNotNull`, `$isMissing`, `$isNotMissing`, `$isValued`, `$isNotValued` |
+| Logical | top-level `$and`, `$or`, `$not`, each with an array of field expressions |
+
+Nested dotted fields are accepted. This safe model-read grammar does **not** implement `$in`, `$within`, `$any`, `$every`, or `$satisfies`. Those names belong to the separately exported legacy/lower-level `QueryBuilder` grammar and are not interchangeable with `findMany`/`page` filters. The lower-level builder produces SQL++ expressions but is not the model reader's parameterized filter path. Use `queryRows` with explicit parameters when the safe grammar cannot express a query.
+
+Pass Couchbase `queryOptions`, including either `scanConsistency: 'request_plus'` or `consistentWith`, for read consistency. Incompatible modes are not merged.
+
+## Soft deletion
+
+Default `deleteById` on a soft-delete model sets `deleted: true` and `deletedAt: new Date()`, then returns the patched document. `restoreById` unsets both. When no custom `defaultWhere` exists, normal reads omit deleted rows; a truthy custom default takes precedence and must explicitly include `{deleted: {$isMissing:true}}` if that behavior is wanted. `withDeleted()` includes all rows, `onlyDeleted()` selects deleted rows, and `{hard:true}` removes physically. `withoutDefaultWhere()` also removes the active default. The current `AutoModelFields` type declares `deleted` as `Date`, although implementation stores a boolean plus `deletedAt`; account for this mismatch. These filters are conveniences, not authorization boundaries.
+
+## TTL options
+
+Insert and upsert accept CouchSet `{ttl, ttlSeconds, strictTtl}` alongside SDK options. `ttlSeconds` wins over `ttl`, and either wins over an SDK `expiry` value. `ttl` accepts a number (seconds in non-strict mode) or a compact string such as `30s`, `15m`, `12h`, `7d`, or `2w`; whitespace between number and unit is not accepted. Invalid strings are silently ignored unless `strictTtl:true`. In strict mode numeric `ttl` is rejected as ambiguous—use `ttlSeconds` or a unit string. CouchSet removes these custom keys and passes the normalized `expiry` plus remaining SDK options to Couchbase.
+
+## Raw SQL++
+
+`queryRows` returns rows, `queryOne` returns the first or `null`, and `queryPage` returns `{items, hasNext, params}` using limit + 1. A positive named/options limit is required; positional parameters use `limitParamIndex`. Raw queries do not inject type/default filters, codecs, hooks, relationships, or authorization.

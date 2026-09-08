@@ -1,0 +1,53 @@
+---
+title: Plugins, hooks, scopes, and operations
+description: Compose definitions and add local behavior without changing global prototypes.
+---
+
+## Plugins and hooks
+
+`defineModelPlugin()` synchronously composes options during `defineModel()`. Plugins receive frozen accumulated options. Named indexes/date fields deduplicate; maps merge; conflicting scalars/validators throw. Plugins cannot change name/scope/collection or nest plugins. Resolution removes the list, so reuse the resolved definition.
+
+```ts
+const timestamps = defineModelPlugin<User>((definition) => ({
+  dateFields: [...(definition.dateFields ?? []), 'lastLoginAt'],
+  indexes: [{name: 'idx_user_email', fields: ['email']}],
+}));
+
+const users = defineModel<User>({name: 'User', plugins: [timestamps]});
+```
+
+Signature: `(definition: Readonly<ModelDefinition<T>>) => ModelPluginContribution<T>`. The return may contain model options except `name`, `plugins`, `scope`, or `collection`. It must be a synchronous plain object; mutable class instances and cycles are rejected. Plugin composition itself performs no I/O.
+
+Definition hooks cover before/after Insert, Upsert, Replace, Patch, Delete, and `afterRead`. Before-write hooks return persisted input. `ModelAfterHookError` means an ordinary mutation already succeeded; do not blindly retry. Transaction hooks may repeat. Raw queries, `mutateById`, `incrementById`, `consumeOnce`, and manual parse/hydrate bypass hooks. Hooks belong to client definitions; plain `new Model()` is unchanged.
+
+```ts
+const users = defineModel<User>({
+  name: 'User',
+  hooks: {
+    beforeInsert: async (data, context) => ({...data, email: data.email.toLowerCase()}),
+    afterRead: async (partial, {operation, transaction}) => {
+      metrics.read(operation, transaction); // projections may make `partial` incomplete
+    },
+  },
+});
+```
+
+Every hook receives `{operation: string, transaction: boolean}`. Before insert/upsert/replace receive and return `T`; before patch receives/returns `PatchByIdArgs`; before delete receives the ID and returns nothing. After write hooks receive parsed data except after delete, which receives the ID. `afterRead` receives `Partial<T>` once per returned row. Before-hook failure prevents the operation. After-hook failure becomes `ModelAfterHookError(cause, context)`: an ordinary operation already succeeded, whereas a transaction attempt may roll back.
+
+## Scopes and domain methods
+
+```ts
+const directory = withModelScopes(users, {
+  forTenant: (id: string) => ({ where: { tenantId: id } }),
+  summary: () => ({ select: ['name'] as const }),
+});
+await directory.scopes.forTenant('acme').scopes.summary().findMany({limit: 20});
+```
+
+Predicates combine with AND; later options win, then call arguments. `queryOptions` replaces whole. Scope views expose reads, not scoped writes. `withModelMethods(model, methods)` adds collision-safe local domain methods using typed `this`.
+
+## Bulk and instrumentation
+
+`bulkMap(items, operation, options)` returns input-ordered fulfilled/rejected/skipped results. Default is ordered serial stop-after-failure. `{ordered:false}` completes all with default concurrency 8. Work is non-atomic and not retried. `withModelBulk` adds `insertMany`, `getMany`, and `deleteMany` while preserving model keys, validators, and hooks; get results include CAS.
+
+Client `instrumentation` supports `onOperation`, `onQuery`, `onMutation`, `onSlowOperation`, `onRetry`, and `slowOperationMs` (default 1,000 ms). Normal events are exactly `{model, operation, durationMs, outcome:'success'|'failure'}`; retry events are `{operation:'transaction', attempt}`. They never contain documents, credentials, parameters, or raw errors. Observers are not awaited and cannot change outcomes.

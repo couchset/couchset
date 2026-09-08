@@ -5,7 +5,7 @@
 <div align="center">
   <img alt="NPM" src="https://img.shields.io/npm/dt/couchset.svg"></img>
   <br />
-  <img width="500px" src="./docs/couchset.png"></img>
+  <img width="960" src="./website/public/brand/couchset-hero.webp" alt="CouchSet’s red couch mascot among neatly arranged data blocks.">
 </div>
 
 CouchSet is a Couchbase model layer for TypeScript and Node.js. The default `couchset` entrypoint keeps the legacy API for safe upgrades; the modern API is available from `couchset/next`.

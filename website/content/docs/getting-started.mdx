@@ -1,0 +1,78 @@
+---
+title: Getting started
+description: Install CouchSet, choose an entrypoint, and run your first model operation.
+---
+
+## Requirements
+
+CouchSet needs Node.js, Couchbase Server or Capella, and credentials for an existing bucket. SQL++ reads require Query plus suitable indexes; Search and Eventing are needed only for those features.
+
+```bash
+npm install couchset
+```
+
+## Modern API
+
+New applications should use `couchset/next`:
+
+```ts
+import { couchset, Model } from 'couchset/next';
+
+type User = { email: string; displayName?: string };
+const users = new Model('User', {
+  scope: 'app', collection: 'users',
+  indexes: [{ name: 'idx_user_email', fields: ['email'] }],
+});
+
+await couchset({
+  connectionString: process.env.COUCHBASE_URL ?? 'couchbase://localhost',
+  username: process.env.COUCHBASE_USERNAME ?? 'Administrator',
+  password: process.env.COUCHBASE_PASSWORD ?? 'password',
+  bucketName: process.env.COUCHBASE_BUCKET ?? 'app',
+});
+
+const created = await users.insert<User>({ email: 'jane@example.com' });
+const found = await users.getById<User>(created.id);
+```
+
+Inserted values include `id`, `createdAt`, `updatedAt`, `_type`, and `_scope`. `insert` rejects an existing ID; `upsert` is explicit insert-or-replace.
+
+For isolated registries and transactions, use definitions and a client:
+
+```ts
+import { createCouchsetClient, dateCodec, defineModel } from 'couchset/next';
+
+type Session = { id: string; userId: string; expiresAt: Date };
+
+const sessions = defineModel<Session>({
+  name: 'Session', scope: 'auth', collection: 'sessions',
+  codecs: { expiresAt: dateCodec },
+});
+const db = createCouchsetClient({
+  connectionString: process.env.COUCHBASE_URL ?? 'couchbase://localhost',
+  username: process.env.COUCHBASE_USERNAME ?? 'Administrator',
+  password: process.env.COUCHBASE_PASSWORD ?? 'password',
+  bucketName: process.env.COUCHBASE_BUCKET ?? 'app',
+  models: [sessions],
+});
+await db.ready();
+const sessionModel = db.model(sessions);
+```
+
+`defineModel()` and `db.model()` perform no DDL.
+
+## Legacy default
+
+The package root preserves the older API:
+
+```ts
+import { couchset, Model } from 'couchset';
+await couchset({ connectionString, username, password, bucketName });
+const users = new Model('User');
+const created = await users.create({ email: 'jane@example.com' });
+const found = await users.findById(created.id);
+await users.updateById(created.id, { ...found, email: 'new@example.com' });
+await users.delete(created.id);
+```
+
+Do not mix assumptions between the legacy and modern entrypoints.

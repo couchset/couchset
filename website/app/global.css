@@ -1,0 +1,31 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/* Red is the interaction accent; the logo stays monochrome. */
+:root {
+  --color-fd-primary: #bc202b;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-ring: #bc202b;
+}
+.dark {
+  --color-fd-primary: #ff8790;
+  --color-fd-primary-foreground: #211013;
+  --color-fd-ring: #ff8790;
+}
+.brand-hero-art {
+  mask-image: linear-gradient(to bottom, transparent 0%, black 19%);
+}
+.brand-link:focus-visible {
+  outline: 3px solid var(--color-fd-ring);
+  outline-offset: 5px;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
