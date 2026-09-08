@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <title>CouchSet</title>
+  <desc>A geometric two-seat couch framed by code-like brackets.</desc>
+  <g fill="#202020">
+    <path d="M76 58h40v66H58V76c0-10 8-18 18-18Z"/>
+    <path d="M140 58h40c10 0 18 8 18 18v48h-58V58Z"/>
+    <path d="M34 112h14v34h160v-34h14c10 0 18 8 18 18v44c0 10-8 18-18 18h-8v14h-24v-14H66v14H42v-14h-8c-10 0-18-8-18-18v-44c0-10 8-18 18-18Z"/>
+  </g>
+</svg>
