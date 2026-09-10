@@ -45,6 +45,10 @@ const multipleComparisonOperators: Record<string, string> = {
     $notBtw: 'NOT BETWEEN',
 };
 
+const collectionComparisonOperators: Record<string, string> = {
+    $in: 'IN',
+};
+
 const logicalOperators: Record<string, string> = {
     $and: 'AND',
     $or: 'OR',
@@ -119,6 +123,16 @@ const buildComparisonExpr = (
                     from,
                     store
                 )} AND ${parameterizeValue(to, store)}`;
+            }
+
+            if (
+                Object.prototype.hasOwnProperty.call(collectionComparisonOperators, operator) &&
+                Array.isArray(comparison[operator])
+            ) {
+                return `${field} ${collectionComparisonOperators[operator]} ${parameterizeValue(
+                    comparison[operator],
+                    store
+                )}`;
             }
 
             throw new Error(`Unsupported pagination where operator: ${operator}`);
