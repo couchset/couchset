@@ -53,6 +53,11 @@ export type ComparisonSingleStringOperatorType = '$like' | '$notLike';
 export type ComparisonMultipleOperatorType = '$btw' | '$notBtw';
 
 /**
+ * List membership comparison operators.
+ * */
+export type ComparisonCollectionOperatorType = '$in';
+
+/**
  * List of Logical operators.
  * */
 export type LogicalOperatorType = '$and' | '$or' | '$not';
@@ -124,7 +129,8 @@ export type ComparisonWhereExpr = {
         | ComparisonEmptyOperatorType
         | ComparisonSingleOperatorType
         | ComparisonMultipleOperatorType
-        | ComparisonSingleStringOperatorType]?: string | number | boolean | (number | string)[];
+        | ComparisonSingleStringOperatorType
+        | ComparisonCollectionOperatorType]?: string | number | boolean | (number | string)[];
 };
 
 /**

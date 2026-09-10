@@ -57,6 +57,24 @@ describe('Safe pagination', () => {
         expect(parameters.cs_param_0).to.equal(unsafeValue);
     });
 
+    it('supports parameterized IN comparisons', () => {
+        const values = ['active', 'pending'];
+        const {query, parameters} = buildPaginationQuery({
+            bucketName: 'test',
+            where: {
+                where: {
+                    status: {$in: values},
+                },
+            },
+            limit: 10,
+            page: 0,
+        });
+
+        expect(query).to.contain('WHERE status IN $cs_param_0');
+        expect(query).not.to.contain('active');
+        expect(parameters.cs_param_0).to.deep.equal(values);
+    });
+
     it('passes parameters to Couchbase and unwraps SELECT * rows', async () => {
         const calls: Array<{query: string; options?: any}> = [];
         CouchbaseConnection.Instance.cluster = {
