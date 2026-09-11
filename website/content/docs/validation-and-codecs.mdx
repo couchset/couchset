@@ -3,33 +3,153 @@ title: Validation and codecs
 description: Validate writes and transform application values to Couchbase JSON.
 ---
 
-## Dates and field codecs
+CouchSet keeps **application types** and **JSON-on-the-wire** separate. Dates and custom values use codecs (or simple date schema helpers) at the SDK boundary. Create/replace hooks validate full documents after CouchSet adds persistence metadata. Patch and raw mutation paths intentionally skip full-document validation.
 
-`schema: {happenedAt: 'date'}` and `dateFields: ['metadata.receivedAt']` parse stored values into `Date`. Generated date metadata is automatic. A codec handles arbitrary types:
+## Dates without a custom codec
+
+Two equivalent ways to parse stored values into `Date` on read:
 
 ```ts
-const invoices = defineModel<Invoice>({
+import { defineModel } from 'couchset/next';
+
+// Top-level schema date
+defineModel({
+  name: 'Event',
+  schema: { happenedAt: 'date' },
+});
+
+// Nested paths via dateFields (also merged into schema as date)
+defineModel({
+  name: 'Event',
+  dateFields: ['metadata.receivedAt', 'profile.birthDate'],
+});
+```
+
+Generated `createdAt` / `updatedAt` metadata is handled automatically. `dateFields` support dotted paths; missing intermediate objects are left alone.
+
+## Field codecs
+
+A `FieldCodec` is `{ toDatabase, fromDatabase }`. Paths may be top-level keys or dotted strings (`payload.expiresAt`).
+
+```ts
+import { dateCodec, defineModel } from 'couchset/next';
+
+type Money = { amount: number; currency: string };
+
+const invoices = defineModel<{
+  issuedAt: Date;
+  total: Money;
+  payload?: { expiresAt: Date };
+}>({
   name: 'Invoice',
   codecs: {
     issuedAt: dateCodec,
     total: {
       toDatabase: (v: Money) => ({ amount: v.amount, currency: v.currency }),
-      fromDatabase: (v) => new Money(v),
+      fromDatabase: (v) => v as Money,
     },
+    'payload.expiresAt': dateCodec,
   },
 });
 ```
 
-Codecs run on insert, upsert, replacement, matching `$set` fields, and reads. A field cannot also use a date schema/dateFields transform. Partial projections parse only returned fields; included models use their own codecs.
-
-## Validation
-
-`validateCreate` covers insert/upsert after metadata is added; `validateReplace` covers replacement. Each can be async and return a transformed document. Patch and raw mutation intentionally skip full-document validation. `parse` is an output transform, not storage validation.
+`dateCodec` ships from `couchset/next`:
 
 ```ts
-const validated = defineModel<User>({
-  name: 'User', plugins: [withModelValidator(userStandardSchema)],
+// toDatabase: Date -> ISO string
+// fromDatabase: string -> Date
+```
+
+### When codecs run
+
+| Direction | Operations |
+| --- | --- |
+| `toDatabase` | insert, upsert, replace (full serialize); matching `$set` fields via `serializeField` |
+| `fromDatabase` | reads through `parse` / deserialize |
+
+Rules:
+
+- A field **cannot** also use `schema: { field: 'date' }` or appear in `dateFields` — CouchSet throws at model construction (`codec for … conflicts with dateFields or schema date`).
+- Undefined values are skipped (no codec call).
+- Partial projections decode only present fields; full-document `parse` hooks are not run on projections (`parseProjection`).
+- Included related models use **their own** codecs.
+- Raw/computed SQL++ projections must not assume document codecs.
+
+## Validation hooks
+
+`validateCreate` runs on insert/upsert **after** metadata (`id`, `createdAt`, `updatedAt`, `_type`, `_scope`) is attached. `validateReplace` runs on replace. Each hook may be async and may return a transformed document (or `void` to keep the input).
+
+```ts
+const users = defineModel<User>({
+  name: 'User',
+  validateCreate: async (document) => {
+    if (!document.email?.includes('@')) throw new Error('invalid email');
+    return document;
+  },
+  validateReplace: (document) => document,
 });
 ```
 
-`withModelValidator()` adapts Standard Schema v1, supports async validation and transformed output, and throws `ModelValidationError` with structured `issues`. Generated metadata survives validators that strip unknown keys. Existing validators conflict instead of being replaced. Transaction validation can repeat, so keep it deterministic and side-effect free.
+`prepareInsert` / `prepareReplace` use the same validation + serialize pipeline as the model write methods.
+
+### What is not validated
+
+- `patchById` / subdocument `$set` / `$unset` / `$inc`
+- `mutateById`, `incrementById`, `consumeOnce`
+- Manual `parse` / hydrate paths that are output transforms only
+
+Treat those as escape hatches: validate in application code if you need checks there.
+
+## Standard Schema via `withModelValidator`
+
+`withModelValidator(schema)` is a plugin that adapts **Standard Schema v1** into both `validateCreate` and `validateReplace`.
+
+```ts
+import { defineModel, withModelValidator, ModelValidationError } from 'couchset/next';
+
+const users = defineModel<User>({
+  name: 'User',
+  plugins: [withModelValidator(userStandardSchema)],
+});
+
+try {
+  await db.model(users).insert({ email: 'bad' });
+} catch (error) {
+  if (error instanceof ModelValidationError) {
+    // error.issues: { message, path? }[]
+  }
+}
+```
+
+Behavior:
+
+- Requires `schema['~standard'].version === 1` and a `validate` function.
+- Supports sync or async validate; failures throw `ModelValidationError` with structured `issues`.
+- If the schema library strips unknown keys, CouchSet **re-applies** persistence metadata from the pre-validation document: `id`, `_type`, `_scope`, `createdAt`, `updatedAt`.
+- Plugin composition **conflicts** if another contribution already set `validateCreate` / `validateReplace` (validators are not silently replaced).
+- Inside transactions, validation hooks may run more than once — keep them **deterministic and side-effect free**.
+
+## `parse` vs validation
+
+| API | Role |
+| --- | --- |
+| `validateCreate` / `validateReplace` | Gate / transform documents **before** they are stored |
+| `parse` | Output transform after deserialize + schema/date/codecs on read |
+| `parseProjection` | Decode present fields without full-document parse hooks |
+
+Do not use `parse` as a substitute for write validation.
+
+## Pitfalls
+
+- Mixing `dateCodec` (or any codec) with `dateFields` / `schema: 'date'` on the same path fails fast at definition time.
+- Expecting patch paths to run `validateCreate` — they do not.
+- Assuming a Standard Schema strip of unknown fields removes `id` / `_type` — CouchSet puts those back after validate.
+- Stacking two validator plugins that both set create/replace hooks — second contribution conflicts.
+- Using codecs on include roots incorrectly — each model owns its codec map.
+
+## See also
+
+- [Models and definitions](/docs/models) — `defineModel`, registries, metadata fields
+- [CRUD and queries](/docs/crud-and-queries) — insert, replace, patch behavior
+- [Plugins, hooks, scopes, and operations](/docs/extensions) — plugin composition
+- [API reference](/docs/api-reference) — `dateCodec`, `withModelValidator`, `ModelValidationError`
