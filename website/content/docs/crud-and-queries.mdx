@@ -3,6 +3,8 @@ title: CRUD and queries
 description: Key-value writes, filters, projections, pagination, TTL, and raw SQL++.
 ---
 
+Bound models expose typed key-value writes and a **safe** SQL++ read grammar (`findMany`, `findOne`, `page`, `count`, `exists`). Raw helpers (`queryRows`, `queryOne`, `queryPage`) skip type defaults, codecs, hooks, and relationships.
+
 ## Writes
 
 ```ts
@@ -10,49 +12,116 @@ const created = await users.insert({ email: 'jane@example.com', visits: 0 });
 await users.upsert({ id: created.id, email: 'jane@example.com', visits: 1 });
 await users.replaceById(created.id, { email: 'jane@example.com', visits: 2 });
 await users.patchById(created.id, {
-  $set: { displayName: 'Jane' }, $unset: ['legacy'], $inc: { visits: 1 },
+  $set: { displayName: 'Jane' },
+  $unset: ['legacy'],
+  $inc: { visits: 1 },
 });
 await users.incrementById(created.id, 'visits', 1);
 await users.deleteById(created.id, { hard: true });
 ```
 
-`replaceById` is a full replacement; `{silent: true}` suppresses its new `updatedAt`. Patch uses subdocument operations then returns a fresh parsed document. `mutateById(id, specs, options)` exposes raw SDK specs and results, requires a non-empty list, and bypasses full validation. SDK options pass through. Insert/upsert also accept `expiry` or compatible `preserveExpiry` TTL behavior.
+| Method | Notes |
+| --- | --- |
+| `replaceById` | Full document replacement; `{ silent: true }` suppresses a new `updatedAt` |
+| `patchById` | Subdocument ops, then a fresh parsed document |
+| `mutateById` | Raw SDK specs/results; non-empty list required; bypasses full validation |
+| Insert / upsert | Accept SDK options plus CouchSet TTL helpers (below) |
+
+SDK options pass through where supported.
 
 ## Reads and filters
 
 ```ts
 const page = await users.page({
-  where: { tenantId: 'acme', age: { $gte: 18 }, status: { $eq: 'active' } },
-  select: ['id', 'email'], orderBy: { createdAt: 'DESC', id: 'ASC' }, limit: 25, page: 0,
+  where: {
+    tenantId: 'acme',
+    age: { $gte: 18 },
+    status: { $eq: 'active' },
+  },
+  select: ['id', 'email'],
+  orderBy: { createdAt: 'DESC', id: 'ASC' },
+  limit: 25,
+  page: 0,
 });
 // { items, hasNext, pageInfo: { limit, page, offset, nextPage, nextOffset } }
 ```
 
-`findMany`, `findOne`, `exists`, `count`, and `page` always constrain `_type`. They apply `defaultWhere` when present; otherwise a soft-delete model applies its deleted-is-missing default. They do not combine those two defaults automatically. Values are parameterized and identifiers escaped. Projection narrows typed results. `findMany` and `page` default to `limit: 10` and `page: 0`. Offset defaults to `page * limit`; an explicit `offset` wins and `pageInfo` reports both values. Page fetches use limit + 1 to derive `hasNext`, `nextPage`, and `nextOffset`. Choose an `orderBy` containing a stable unique field for changing data.
+`findMany`, `findOne`, `exists`, `count`, and `page` always constrain `_type`. They apply `defaultWhere` when present; otherwise a soft-delete model applies deleted-is-missing. They do **not** combine those two defaults automatically (see [Models and definitions](/docs/models)).
+
+Values are parameterized and identifiers escaped. Projection narrows typed results. `findMany` and `page` default to `limit: 10` and `page: 0`. Offset defaults to `page * limit`; an explicit `offset` wins and `pageInfo` reports both. Page fetches use **limit + 1** to derive `hasNext`, `nextPage`, and `nextOffset`. Prefer an `orderBy` that includes a stable unique field when data changes under pagination.
+
+Joined reads (`include`) are covered in [Relationships and hydration](/docs/relationships-and-hydration). `count` / `exists` reject includes.
 
 ### Filter operators
 
 | Shape | Operators |
 | --- | --- |
-| Scalar shorthand | `{status: 'active'}` |
+| Scalar shorthand | `{ status: 'active' }` |
 | Comparison | `$eq`, `$neq`, `$gt`, `$gte`, `$lt`, `$lte` |
 | String | `$like`, `$notLike` |
 | Range | `$btw: [low, high]`, `$notBtw: [low, high]` |
-| Presence/value | `$isNull`, `$isNotNull`, `$isMissing`, `$isNotMissing`, `$isValued`, `$isNotValued` |
+| Presence / value | `$isNull`, `$isNotNull`, `$isMissing`, `$isNotMissing`, `$isValued`, `$isNotValued` |
 | Logical | top-level `$and`, `$or`, `$not`, each with an array of field expressions |
 
-Nested dotted fields are accepted. This safe model-read grammar does **not** implement `$in`, `$within`, `$any`, `$every`, or `$satisfies`. Those names belong to the separately exported legacy/lower-level `QueryBuilder` grammar and are not interchangeable with `findMany`/`page` filters. The lower-level builder produces SQL++ expressions but is not the model reader's parameterized filter path. Use `queryRows` with explicit parameters when the safe grammar cannot express a query.
+Nested dotted fields are accepted. This safe grammar does **not** implement `$in`, `$within`, `$any`, `$every`, or `$satisfies`. Those names belong to the separately exported legacy / lower-level `QueryBuilder` and are not interchangeable with `findMany` / `page`. Use `queryRows` with explicit parameters when the safe grammar cannot express a query.
 
 Pass Couchbase `queryOptions`, including either `scanConsistency: 'request_plus'` or `consistentWith`, for read consistency. Incompatible modes are not merged.
 
 ## Soft deletion
 
-Default `deleteById` on a soft-delete model sets `deleted: true` and `deletedAt: new Date()`, then returns the patched document. `restoreById` unsets both. When no custom `defaultWhere` exists, normal reads omit deleted rows; a truthy custom default takes precedence and must explicitly include `{deleted: {$isMissing:true}}` if that behavior is wanted. `withDeleted()` includes all rows, `onlyDeleted()` selects deleted rows, and `{hard:true}` removes physically. `withoutDefaultWhere()` also removes the active default. The current `AutoModelFields` type declares `deleted` as `Date`, although implementation stores a boolean plus `deletedAt`; account for this mismatch. These filters are conveniences, not authorization boundaries.
+Default `deleteById` on a soft-delete model sets `deleted: true` and `deletedAt: new Date()`, then returns the patched document. `restoreById` unsets both.
+
+When no custom `defaultWhere` exists, normal reads omit deleted rows. A truthy custom default takes precedence and must explicitly include `{ deleted: { $isMissing: true } }` if that behavior is wanted.
+
+| Helper | Effect |
+| --- | --- |
+| `withDeleted()` | Include all rows |
+| `onlyDeleted()` | Deleted rows only |
+| `withoutDefaultWhere()` | Remove the active default |
+| `{ hard: true }` | Physical remove |
+
+`AutoModelFields` currently types `deleted` as `Date`, while the implementation stores a boolean plus `deletedAt` — account for the mismatch. These filters are conveniences, **not** authorization boundaries.
 
 ## TTL options
 
-Insert and upsert accept CouchSet `{ttl, ttlSeconds, strictTtl}` alongside SDK options. `ttlSeconds` wins over `ttl`, and either wins over an SDK `expiry` value. `ttl` accepts a number (seconds in non-strict mode) or a compact string such as `30s`, `15m`, `12h`, `7d`, or `2w`; whitespace between number and unit is not accepted. Invalid strings are silently ignored unless `strictTtl:true`. In strict mode numeric `ttl` is rejected as ambiguous—use `ttlSeconds` or a unit string. CouchSet removes these custom keys and passes the normalized `expiry` plus remaining SDK options to Couchbase.
+Insert and upsert accept CouchSet `{ ttl, ttlSeconds, strictTtl }` alongside SDK options.
+
+- `ttlSeconds` wins over `ttl`; either wins over an SDK `expiry` value.
+- `ttl` accepts a number (seconds in non-strict mode) or a compact string such as `30s`, `15m`, `12h`, `7d`, or `2w` (no whitespace between number and unit).
+- Invalid strings are silently ignored unless `strictTtl: true`.
+- In strict mode, numeric `ttl` is rejected as ambiguous — use `ttlSeconds` or a unit string.
+
+CouchSet strips these custom keys and passes normalized `expiry` plus remaining SDK options to Couchbase.
 
 ## Raw SQL++
 
-`queryRows` returns rows, `queryOne` returns the first or `null`, and `queryPage` returns `{items, hasNext, params}` using limit + 1. A positive named/options limit is required; positional parameters use `limitParamIndex`. Raw queries do not inject type/default filters, codecs, hooks, relationships, or authorization.
+```ts
+const rows = await users.queryRows<{ id: string }>(
+  'SELECT RAW id FROM app WHERE tenantId = $tenant',
+  { tenant: 'acme' },
+);
+const one = await users.queryOne('SELECT RAW META().id FROM app LIMIT 1');
+const page = await users.queryPage('SELECT RAW META().id FROM app', { limit: 25 });
+// { items, hasNext, params }
+```
+
+`queryRows` returns rows, `queryOne` the first or `null`, and `queryPage` `{ items, hasNext, params }` using limit + 1. A positive named/options limit is required; positional parameters use `limitParamIndex`.
+
+Raw queries do **not** inject type/default filters, codecs, hooks, relationships, or authorization.
+
+## Pitfalls
+
+- Using `$in` / `$any` in `findMany` where — wrong grammar; use `queryRows` or rethink the filter.
+- Paginating without a stable `orderBy` on changing data.
+- Expecting `page` after JOIN to mean distinct roots (it pages result rows).
+- Treating soft-delete helpers as security.
+- Relying on raw SQL++ to apply model defaults automatically.
+
+## See also
+
+- [Models and definitions](/docs/models) — `_type`, soft delete, keys
+- [Relationships and hydration](/docs/relationships-and-hydration) — includes and hydrated docs
+- [Validation and codecs](/docs/validation-and-codecs) — write-time validation
+- [Plugins, hooks, scopes, and operations](/docs/extensions) — scopes and bulk
+- [Search, vector, and geospatial](/docs/search-and-geo) — Search vs SQL++
+- [API reference](/docs/api-reference) — read/write method reference

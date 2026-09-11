@@ -3,6 +3,8 @@ title: Provisioning and transactions
 description: Create resources explicitly, plan index drift, and use transaction or CAS safety.
 ---
 
+CouchSet never creates scopes, collections, or indexes just because you imported a definition or bound a model. Run DDL with admin credentials when you mean to. Transactions and CAS cover multi-document and single-document safety separately from provisioning.
+
 ## Explicit provisioning
 
 ```ts
@@ -10,7 +12,26 @@ await db.ensureCollections();
 await db.ensureIndexes({ waitForIndexes: true });
 ```
 
-These require appropriate Manage Scopes/query-index privileges. Collection provisioning creates only missing resources; it never updates, renames, or drops. `_default` is not created. Conflicting settings for the same target fail. Index ensure is create-only. Singleton models also support `indexStatements()`, `ensureIndexes()`, and top-level/static `ensureIndexes`.
+These need **Manage Scopes** and query-index privileges.
+
+| Helper | Behavior |
+| --- | --- |
+| `ensureCollections` | Creates missing named scopes, then collections. Concurrent already-exists is OK. Never updates, renames, or drops. Does **not** create `_default`. Named collections in `_default` are supported. Conflicting settings for the same target fail. |
+| `ensureIndexes` | `CREATE INDEX IF NOT EXISTS` only — never compares, changes, drops, or rebuilds an existing index |
+
+Singleton / legacy models also support `indexStatements()`, `ensureIndexes()`, and top-level static `ensureIndexes` where applicable.
+
+### Dynamic registration
+
+```ts
+const reports = await db.registerModel(reportDefinition, {
+  provision: { collections: true, indexes: true, waitForIndexes: true },
+});
+```
+
+Binding `db.model(definition)` alone still performs **no** I/O. Only an explicit `provision` option (or the ensure/plan helpers above) touches the cluster.
+
+### Index drift
 
 ```ts
 const plan = await db.planIndexes(); // create | matching | replace
@@ -18,7 +39,11 @@ await db.applyIndexPlan(plan);
 await db.applyIndexPlan(plan, { dropReplaced: true });
 ```
 
-Drift creates a versioned replacement and waits for online before optional old-index removal. Dropping is affirmative. Runtime definitions can use `db.registerModel(definition, {provision:{collections:true,indexes:true,waitForIndexes:true}})`.
+When a live definition drifts, the plan creates a **versioned** physical replacement and waits for it to become online before an old index can be dropped. That avoids an unindexed window. Dropping the old index is affirmative (`dropReplaced: true`).
+
+Search indexes use the parallel `planSearchIndexes` / `applySearchIndexPlan` path (see [Search, vector, and geospatial](/docs/search-and-geo)).
+
+CLI counterparts (`collections plan|apply`, `indexes plan|apply`, `search-indexes plan|apply`) live under [Operations and CLI](/docs/operations-cli-eventing) — still review-then-apply, no silent drops.
 
 ## Transactions
 
@@ -30,15 +55,50 @@ await db.transaction(async (tx) => {
 });
 ```
 
-Transaction models expose attempt-bound get/insert/replace/remove; insert needs an explicit ID. Couchbase may retry the callback. Do not perform irreversible external effects inside it. Hooks and validation can also repeat. Commit-ambiguous errors surface to the caller.
+Transaction-bound models expose attempt-scoped `get` / `insert` / `replace` / `remove`. Inserts need an **explicit ID**.
+
+Couchbase may **retry** the callback. Do not send email, fire webhooks, or perform other irreversible external effects inside it — do that after the transaction resolves, or use an outbox / idempotency key. Hooks and validation can also repeat. Commit-ambiguous errors surface to the caller; CouchSet does not claim success or re-run external work.
 
 ## CAS
 
 ```ts
 const current = await model.getWithCas(id);
 await model.replaceIfCas(id, nextValue, current.cas);
+
 const result = await model.consumeOnce(id, current.cas);
-// consumed | missing | conflict
+// { status: 'consumed' } | { status: 'missing' } | { status: 'conflict' }
 ```
 
-`consumeOnce` makes one conditional remove without rereading/retrying. `createCouchsetTestFixture()` provisions an isolated model and returns explicit `cleanup()`; always run it in teardown.
+`consumeOnce` issues exactly one conditional remove. It does **not** re-read and retry with a fresh CAS.
+
+Hydrated `save({ cas })` and related replace options are covered in [Relationships and hydration](/docs/relationships-and-hydration).
+
+## Test fixtures
+
+```ts
+const { model, cleanup } = await createCouchsetTestFixture(db, definition);
+try {
+  // isolated named scope/collection via registerModel + provision
+} finally {
+  await cleanup(); // drops fixture collection (and generated scope when applicable)
+}
+```
+
+Fixture cleanup is the only helper that **drops** a resource. Always run `cleanup()` in teardown.
+
+## Pitfalls
+
+- Expecting `db.model(...)` or import to provision collections/indexes.
+- Using `ensureIndexes` to “fix” drifted definitions — use `planIndexes` / `applyIndexPlan`.
+- Side effects inside `db.transaction` callbacks (retries).
+- Assuming `consumeOnce` retries on conflict.
+- Leaving test fixtures without `cleanup()`.
+
+## See also
+
+- [Connections and clients](/docs/connection) — binding vs provisioning
+- [Models and definitions](/docs/models) — indexes on definitions
+- [Search, vector, and geospatial](/docs/search-and-geo) — Search index plans
+- [Eventing](/docs/eventing) — separate control-plane reconcile
+- [Operations and CLI](/docs/operations-cli-eventing) — plan/apply from the CLI
+- [API reference](/docs/api-reference) — ensure/plan/transaction entrypoints
