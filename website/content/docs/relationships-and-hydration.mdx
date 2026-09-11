@@ -3,38 +3,161 @@ title: Relationships and hydration
 description: Compose typed includes and opt into active document objects.
 ---
 
+Plain `findMany` / `findOne` / `page` reads return plain objects. **Includes** let SQL++ join or nest related documents in the same query. **Hydration** turns a loaded document into an object with `save`, `patch`, `reload`, `delete`, and `toJSON`.
+
 ## Includes
 
 ```ts
-const orders = await orderModel.findMany({
+import { createCouchsetClient, defineModel, joinField } from 'couchset/next';
+
+const db = createCouchsetClient({ /* connection */ bucketName: 'app' });
+const orders = db.model(
+  defineModel<{ customerId: string; total: number }>({
+    name: 'Order',
+    scope: 'sales',
+    collection: 'orders',
+  }),
+);
+const customers = db.model(
+  defineModel<{ id: string; name: string }>({
+    name: 'Customer',
+    scope: 'sales',
+    collection: 'customers',
+  }),
+);
+
+const rows = await orders.findMany({
   sourceAlias: 'order',
   include: [
     {
-      as: 'customer', model: customerModel, type: 'leftJoin',
+      as: 'customer',
+      model: customers,
+      type: 'leftJoin',
       on: {
-        left: joinField('order.customerId'), op: '$eq',
-        right: joinField('customer.id'),
+        left: joinField('customer.id'),
+        op: '$eq',
+        right: joinField('order.customerId'),
       },
       select: ['id', 'name'],
     },
   ],
 });
+// rows[0]?.customer?.name
 ```
 
-Every include requires `as` and exactly one relationship form: `on` (structured ANSI predicate), trusted `onRaw`, `key` (one ON KEYS expression), or `keys` (array ON KEYS expression). Do not mix ANSI (`on`/`onRaw`) and ON KEYS (`key`/`keys`) includes in one read. `joinField(path)` makes a field operand explicit; bare right-side values are parameters.
+### Relationship forms
 
-Types are `join`, `leftJoin`, `nest`, and `leftNest`. With no `type`, `key` defaults to JOIN and `keys` to NEST; `optional: true` selects the left variant. Joins return a related object, while nests return arrays and normalize missing values to `[]`. `select` projects related top-level fields. Aliases and paths are validated, root-field collisions throw, typed definitions infer include/projection shapes, and related models parse their codecs. State relationship predicates explicitly—model filters are not authorization.
+Every include needs `as` and **exactly one** of:
+
+| Form | Meaning |
+| --- | --- |
+| `on` | Structured ANSI join predicate |
+| `onRaw` | Trusted SQL++ fragment with `?` placeholders (`{ sql, values? }`) |
+| `key` | Single source path used with `ON KEYS` |
+| `keys` | Array source path used with `ON KEYS` |
+
+Do **not** mix ANSI (`on` / `onRaw`) and lookup (`key` / `keys`) includes in one read.
+
+### Join kinds
+
+`type` is `join` | `leftJoin` | `nest` | `leftNest`.
+
+- With no `type`: `key` defaults to **JOIN**, `keys` defaults to **NEST**.
+- `optional: true` selects the left variant of the chosen kind.
+- **JOIN / LEFT JOIN** attach one related object (left may be `null` / absent).
+- **NEST / LEFT NEST** attach an **array**; left nest normalizes missing values to `[]`.
+
+```ts
+// ON KEYS lookup (optional -> LEFT JOIN)
+include: [{ as: 'customer', model: customers, key: 'customerId', optional: true }]
+```
+
+### `joinField` vs parameters
+
+`joinField('alias.path')` is always a **field reference**. A bare string/number on `right` is always a **bound parameter**, even if it contains a dot.
+
+```ts
+on: {
+  left: joinField('customer.status'),
+  op: '$eq',
+  right: 'active', // parameter, not a field path
+}
+```
+
+Comparisons: `$eq`, `$neq`, `$gt`, `$gte`, `$lt`, `$lte`. Combine with nonempty `$and` / `$or` arrays.
+
+Aliases in predicates must refer to the root (`sourceAlias`, default `doc`), the current include, or an earlier include.
+
+### Related models and filters
+
+Passing `model` supplies keyspace, codecs, and TypeScript inference. It does **not** automatically apply that model’s `_type`, `defaultWhere`, or soft-delete policy. Put required related predicates in `on` (especially when several types share a keyspace). Include predicates are not authorization.
+
+CouchSet does not create ANSI-join indexes. Provision them explicitly.
+
+### Projections and codecs
+
+- Root `select` and per-include `select` are top-level field arrays (or `'*'`). Nested/dotted joined selections are not supported.
+- Present selected fields run codecs / date transforms; full-document parse hooks run only for full documents.
+- Include aliases must not collide with root fields or other aliases. `__cs_root` and prototype-related names are reserved.
+- `count` / `exists` **reject** includes — use `queryRows` for joined aggregates.
+
+### Consistency
+
+Pass SDK options via `queryOptions` on `findMany`, `findOne`, and `page` (including joined reads). CouchSet does not force a scan-consistency default.
 
 ## Hydration
 
-Plain reads return plain objects. `findDocById` or `hydrate(data)` adds `save`, `patch`, `reload`, `delete`, and `toJSON`:
-
 ```ts
-const user = await users.findDocById<User>(id);
+const user = await users.findDocById(id);
 user.displayName = 'Jane';
-await user.save();       // full replacement
+await user.save(); // replaceById(toJSON()); refreshes local fields
 await user.patch({ $inc: { visits: 1 } });
 await user.reload();
+await user.delete(); // respects model delete options / soft-delete
+user.toJSON(); // enumerable data only
 ```
 
-The model reference is non-enumerable. Prefer patch for partial changes and CAS when concurrent replacement matters. `withDocumentMethods(document, methods)` makes a shallow copy with non-enumerable domain methods, refuses collisions, and leaves the original/global prototypes unchanged. Use normal functions for typed `this`.
+Also available: `findDocOne({ where })` and `hydrate(plainDocument)` on an already-loaded object.
+
+| Method | Behavior |
+| --- | --- |
+| `save(options?)` | Full document `replaceById` of `toJSON()` fields, then assign result; optional CAS / `validate` |
+| `patch(patch, options?)` | `patchById` then refresh local fields |
+| `reload()` | `getById` and assign |
+| `delete(options?)` | `deleteById` |
+| `toJSON()` | Own enumerable keys only (model handle is non-enumerable) |
+
+Prefer `patch` for partial updates. Use CAS on `save` when concurrent replacement matters. Hydrated documents are opt-in — ordinary reads stay plain objects.
+
+### Domain methods
+
+`withDocumentMethods(document, methods)` returns a shallow copy with non-enumerable methods, refuses name collisions, and does not mutate the original or global prototypes. Use normal functions for typed `this`.
+
+```ts
+import { withDocumentMethods } from 'couchset/next';
+
+const doc = withDocumentMethods(await users.findDocById(id), {
+  async rename(name: string) {
+    this.displayName = name;
+    return this.save();
+  },
+});
+await doc.rename('Jane');
+```
+
+## Pitfalls
+
+- Mixing ANSI and `ON KEYS` includes in one query — rejected.
+- Assuming related soft-delete / `_type` filters apply automatically — they do not.
+- Include alias colliding with a root field (`creator` vs `creator` key) — type and/or runtime error.
+- Expecting `page()` to mean distinct roots after JOIN — it pages result rows (`limit + 1`), not distinct documents.
+- Using `count({ include })` — unsupported; write an explicit aggregate query.
+- Treating bare dotted strings in `on.right` as fields — they are parameters; use `joinField`.
+
+## See also
+
+- [CRUD and queries](/docs/crud-and-queries) — `findMany`, `page`, filters
+- [Validation and codecs](/docs/validation-and-codecs) — related codecs on includes
+- [Provisioning and transactions](/docs/provisioning-and-transactions) — indexes for joins
+- [API reference](/docs/api-reference) — `joinField`, include types, hydrate helpers
+- [Joined reads (repo notes)](https://github.com/couchset/couchset/blob/master/docs/joins-and-consistency.md) — deeper consistency and typing notes not yet fully mirrored on the site
