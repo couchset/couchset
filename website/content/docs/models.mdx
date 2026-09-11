@@ -3,44 +3,99 @@ title: Models and definitions
 description: Declare keyspaces, metadata, indexes, keys, and typed registries.
 ---
 
+A **definition** describes a document type: keyspace, indexes, codecs, keys, and hooks. It performs no I/O. Binding it to a client (or constructing a legacy singleton `Model`) is what gives you reads and writes.
+
+## Legacy singleton `Model`
+
 ```ts
+import { Model } from 'couchset/next';
+
 const orders = new Model('Order', {
-  scope: 'sales', collection: 'orders', softDelete: true,
+  scope: 'sales',
+  collection: 'orders',
+  softDelete: true,
   dateFields: ['submittedAt'],
   indexes: [{ name: 'idx_order_status', fields: ['tenantId', 'status'] }],
 });
 ```
 
-`name` becomes `_type`. `scope` and `collection` select the physical keyspace; omitted parts use `_default`. Writes add `id`, `createdAt`, `updatedAt`, `_type`, `_scope`, and, for soft deletion, `deleted`.
+`name` becomes `_type`. `scope` and `collection` select the physical keyspace; omitted parts use `_default`. Writes add `id`, `createdAt`, `updatedAt`, `_type`, `_scope`, and, for soft deletion, `deleted` (plus `deletedAt` when soft-deleting).
+
+## Typed definitions and registry
+
+```ts
+import { createCouchsetClient, dateCodec, defineModel } from 'couchset/next';
+
+type Order = {
+  id: string;
+  tenantId: string;
+  status: string;
+  submittedAt?: Date;
+};
+
+const definition = defineModel<Order>({
+  name: 'Order',
+  scope: 'sales',
+  collection: 'orders',
+  codecs: { submittedAt: dateCodec },
+  collectionSettings: { maxExpiry: 86_400, history: false },
+  indexes: [
+    { name: 'idx_order_status', fields: ['tenantId', { submittedAt: 'DESC' }] },
+  ],
+});
+
+const db = createCouchsetClient({ bucketName: 'app', models: [definition] });
+const orders = db.model(definition);
+db.definitions(); // manifest of registered definitions
+await db.registerModel(otherDefinition); // runtime registration
+```
+
+Definitions can be reused across clients. `db.model(definition)` binds and registers. Neither `defineModel` nor binding creates Couchbase resources — see [Provisioning and transactions](/docs/provisioning-and-transactions).
 
 <Callout type="warn" title="defaultWhere takes precedence over soft delete">
 If `defaultWhere` is truthy, it replaces CouchSet's automatic `{deleted: {$isMissing:true}}` default; the two are not combined. To use both, write one explicit `$and` predicate containing your tenant condition and the deleted-is-missing condition. `withDeleted()` and `withoutDefaultWhere()` then remove the entire default, while `onlyDeleted()` replaces it with `{deleted: {$eq:true}}`.
 </Callout>
 
-## Typed definitions and registry
+## Document modeling tips
 
-```ts
-type Order = { id: string; tenantId: string; status: string; submittedAt?: Date };
-const definition = defineModel<Order>({
-  name: 'Order', scope: 'sales', collection: 'orders',
-  codecs: { submittedAt: dateCodec },
-  collectionSettings: { maxExpiry: 86_400, history: false },
-  indexes: [{ name: 'idx_order_status', fields: ['tenantId', { submittedAt: 'DESC' }] }],
-});
-```
+Prefer paging **lightweight** list/metadata documents and fetching heavy payloads by id (`getById` / `findDocById`) when a detail view needs them. Denormalize card fields onto the list model; keep large nested state in a companion document. Includes can join companions for focused detail reads — avoid joining large payloads into list pages. Stable id formulas (`report::123` / `report-payload::report::123`) make backfills obvious.
 
-Definitions perform no I/O and can be reused across clients. `db.model(definition)` binds and registers; `db.definitions()` lists the manifest; `db.registerModel()` adds a runtime definition.
+See [document modeling (repo)](https://github.com/couchset/couchset/blob/master/docs/document-modeling.md) for a fuller split/migration sketch.
 
 ## Consumer-defined keys
 
 ```ts
 key: {
   create: (user) => `user::${user.email.toLowerCase()}`,
-  parse: (id) => id.startsWith('user::') ? id.slice(6) : null,
-  explicitId: 'validate',
+  parse: (id) => (id.startsWith('user::') ? id.slice(6) : null),
+  explicitId: 'validate', // default: allow explicit IDs; 'reject' refuses them
 }
 ```
 
-`create` runs synchronously only when insert/upsert has no ID. Explicit IDs pass by default; `validate` requires a truthy synchronous parse result and `reject` refuses them. Reads and existing keys are not rewritten. Transaction inserts need explicit IDs, so `reject` disallows them.
+| Piece | Behavior |
+| --- | --- |
+| `create` | Synchronous; runs only when insert/upsert has **no** ID |
+| `parse` | Used when `explicitId: 'validate'` — must return a truthy synchronous result |
+| `explicitId: 'reject'` | Refuses caller-supplied IDs |
 
-Bound models expose `getCollection()`, `bucket()`, `keyspace()`, and `from(alias?)` for low-level integrations.
+Strategies do **not** rewrite reads, patch, replace, delete, or existing keys. Transaction inserts need explicit IDs, so `reject` disallows those inserts.
+
+## Bound model surfaces
+
+Bound models expose `getCollection()`, `bucket()`, `keyspace()`, and `from(alias?)` for low-level integrations. Typed client models also carry codecs, hooks, search indexes, and the safe read grammar from [CRUD and queries](/docs/crud-and-queries).
+
+## Pitfalls
+
+- Treating definitions as provisioned resources.
+- Combining soft-delete defaults with a custom `defaultWhere` without an explicit `$and`.
+- Paging huge documents that only need a few list fields.
+- Expecting key strategies to rewrite existing document ids on read.
+
+## See also
+
+- [Connections and clients](/docs/connection) — singleton vs client-owned
+- [Validation and codecs](/docs/validation-and-codecs) — schema, codecs, validators
+- [Plugins, hooks, scopes, and operations](/docs/extensions) — plugins and hooks
+- [CRUD and queries](/docs/crud-and-queries) — reads/writes on bound models
+- [Provisioning and transactions](/docs/provisioning-and-transactions) — ensure/plan
+- [API reference](/docs/api-reference) — `defineModel` options

@@ -3,38 +3,140 @@ title: Search, vector, and geospatial
 description: Full-text, vector, hybrid, and geographic queries.
 ---
 
+Client definitions declare `searchIndexes`; you plan and apply them explicitly, then query through `db.search(...)`. Results are SDK Search hits and metadata — not hydrated model documents. For numeric lat/lon GSI reads, use `db.geo(...)` with `strategy: 'gsi'`.
+
+## Declare a Search index
+
 ```ts
-const places = defineModel<Place>({name:'Place', searchIndexes:[{
-  name:'places_search', scoped:true, fields:{
-    name:{type:'text',store:true}, location:{type:'geopoint'},
-    boundary:{type:'geoshape'}, embedding:{type:'vector',dims:384},
-  },
-}]});
+import { createCouchsetClient, defineModel } from 'couchset/next';
+
+type Place = {
+  id: string;
+  name: string;
+  location: { lat: number; lon: number };
+  boundary?: unknown;
+  embedding: number[];
+};
+
+const places = defineModel<Place>({
+  name: 'Place',
+  searchIndexes: [
+    {
+      name: 'places_search',
+      scoped: true,
+      fields: {
+        name: { type: 'text', store: true },
+        location: { type: 'geopoint' },
+        boundary: { type: 'geoshape' },
+        embedding: { type: 'vector', dims: 384 },
+      },
+    },
+  ],
+});
+
+const db = createCouchsetClient({ bucketName: 'app', models: [places] });
 db.model(places);
-const plan = await db.planSearchIndexes();
+
+const plan = await db.planSearchIndexes(); // read-only
 await db.applySearchIndexPlan(plan);
 ```
 
-Planning is read-only. Drift replacement needs `allowReplace:true`, may rebuild the index, and rejects stale catalog UUIDs. No automatic drop occurs. Vector/scoped features require compatible Couchbase versions and Search service.
+Field mappings support text, number, boolean, datetime, geopoint, geoshape, and vector. Vector fields require `dims`; similarity defaults to `dot_product`. Indexes cover the declared collection. Model Search queries add a keyword `_type` constraint.
+
+### Planning and apply
+
+- Planning is **read-only**. Apply checks catalog UUIDs and refuses stale plans.
+- Missing indexes are created explicitly.
+- Drift replacement needs `allowReplace: true`, may rebuild the index, and never auto-drops.
+- The planner compares managed mappings and partition count (normalizing catalog defaults). Server storage-tuning settings are not managed.
+- Readiness means a Search query can execute, not that every mutation is indexed. Use consistency tokens or your own ingestion checks when freshness matters.
+- Vector and scoped indexes need a compatible Couchbase version and Search service.
+
+## Query helpers
 
 ```ts
 const search = db.search(places, 'places_search');
+
 const textResult = await search.match('name', 'coffee');
-const vectorResult = await search.vector('embedding', vector, {filter, searchQuery});
-await search.withinRadius({field:'location',center:{lat:43.65,lon:-79.44},radius:'5km',strategy:'search'});
+const vectorResult = await search.vector('embedding', vector, {
+  filter,
+  searchQuery,
+  numCandidates: 20,
+});
+await search.withinRadius({
+  field: 'location',
+  center: { lat: 43.65, lon: -79.44 },
+  radius: '5km',
+  strategy: 'search',
+});
 ```
 
-Every method returns the SDK `SearchResult` (`rows`/hits plus metadata), not hydrated documents; stored fields remain unknown. `query(raw, sdkOptions)` exposes facets, highlighting, sort, `limit`/`skip`, and consistency. `match` requires a declared text mapping. `vector` requires finite values matching the declared `dims`; `numCandidates` defaults to 10 and must be a positive integer, `filter` defaults to match-all, and optional `searchQuery` adds hybrid text/Search matching. Similarity defaults to `dot_product` in a vector mapping.
+Every method returns the SDK `SearchResult` (`rows` / hits plus metadata). Stored fields remain untyped. `query(raw, sdkOptions)` exposes facets, highlighting, sort, `limit` / `skip`, and consistency.
 
-Search adds `_type` but rejects definitions with SQL++ `defaultWhere` or soft deletion; supply explicit filters. Points use `{lat,lon}`, GeoJSON uses `[lon,lat]`.
+| Helper | Notes |
+| --- | --- |
+| `match` | Requires a declared **text** mapping |
+| `vector` | Finite values matching declared `dims`; `numCandidates` defaults to `10` (positive integer); `filter` defaults to match-all; optional `searchQuery` for hybrid text/Search |
+| Geo helpers | See table below; each takes SDK `SearchQueryOptions` as the second argument |
+
+### Geo Search methods
 
 | Method | Required arguments |
 | --- | --- |
-| `withinRadius` | `{field, center, radius, strategy:'search'}` on `geopoint`; radius accepts values such as `5km`, `3mi`, or `500m` |
-| `withinBox` | `{field, bounds:{north,south,east,west}, strategy:'search'}` on `geopoint` |
-| `withinPolygon` | `{field, points:[at least 3 GeoPoint], strategy:'search'}` on `geopoint` |
-| `shape` | `{field, geometry, relation, strategy:'search'}` on `geoshape`; relation is `intersects`, `within`, or `contains` |
+| `withinRadius` | `{ field, center, radius, strategy: 'search' }` on `geopoint`; radius like `5km`, `3mi`, `500m` |
+| `withinBox` | `{ field, bounds: { north, south, east, west }, strategy: 'search' }` on `geopoint` |
+| `withinPolygon` | `{ field, points: [at least 3 GeoPoint], strategy: 'search' }` on `geopoint` |
+| `shape` | `{ field, geometry, relation, strategy: 'search' }` on `geoshape`; relation is `intersects`, `within`, or `contains` |
 
-Each accepts SDK `SearchQueryOptions` as the second argument.
+Points use `{ lat, lon }`. GeoJSON coordinate arrays use `[lon, lat]`. Geometry validation is ultimately enforced by Couchbase. SDK sorting can order by `geo_distance`. Search `limit` does not bound all candidate work — inspect SDK metadata for timing and hit counts.
 
-`db.geo(definition)` provides explicit `strategy:'gsi'` box/radius reads over numeric `field.lat`/`field.lon`. `withinBox({field,bounds,strategy:'gsi',where?,limit?,offset?,queryOptions?})` returns parsed model documents and inherits the model read default limit of 10. `withinRadius({field,center,radius,strategy:'gsi',...})` defaults to limit 20/offset 0, applies a bounding prefilter plus great-circle SQL++, and returns `{document,distanceKm}[]` ordered by distance then document ID. It retains the definition's default-or-soft-delete precedence and parses codecs. Provision numeric GSI indexes. `geoPoint`, `geoBounds`, `geoRadiusKm`, and `radiusBounds` validate/derive inputs.
+### Soft delete and `defaultWhere`
+
+Search **rejects** definitions with SQL++ `defaultWhere` or `softDelete`. Those predicates cannot be translated safely. Use a separate Search-friendly definition and supply explicit Search filters. Do not treat model filters as authorization.
+
+## GSI geospatial (`db.geo`)
+
+```ts
+const geo = db.geo(places);
+
+const box = await geo.withinBox({
+  field: 'location',
+  bounds: { north: 44, south: 43, east: -79, west: -80 },
+  strategy: 'gsi',
+  where: { status: 'open' },
+  limit: 10,
+});
+
+const nearby = await geo.withinRadius({
+  field: 'location',
+  center: { lat: 43.65, lon: -79.44 },
+  radius: '5km',
+  strategy: 'gsi',
+});
+// nearby: { document, distanceKm }[]
+```
+
+| Path | Behavior |
+| --- | --- |
+| `withinBox` + `gsi` | Model read over numeric `field.lat` / `field.lon`; returns parsed documents; default limit **10** |
+| `withinRadius` + `gsi` | Bounding prefilter + great-circle SQL++; default limit **20** / offset `0`; ordered by distance then document id; returns `{ document, distanceKm }[]` |
+
+GSI geo **retains** the definition's `defaultWhere` / soft-delete precedence and parses codecs. Named scope views are separate — pass extra predicates with `where`. Provision numeric GSI indexes explicitly. Helpers handle antimeridian and polar bounds; distances assume a spherical Earth (6371 km).
+
+Helpers: `geoPoint`, `geoBounds`, `geoRadiusKm`, `radiusBounds` validate or derive inputs.
+
+## Pitfalls
+
+- Expecting Search hits to be hydrated models or fully typed stored fields.
+- Declaring `softDelete` / `defaultWhere` on a Search model — rejected at query time.
+- Mixing up point shapes: `{ lat, lon }` vs GeoJSON `[lon, lat]`.
+- Treating Search readiness as “all recent writes are indexed.”
+- Forgetting to provision GSI indexes for `strategy: 'gsi'` geo reads.
+
+## See also
+
+- [Models and definitions](/docs/models) — `searchIndexes` on definitions
+- [Provisioning and transactions](/docs/provisioning-and-transactions) — plan/apply patterns
+- [CRUD and queries](/docs/crud-and-queries) — SQL++ filters vs Search
+- [API reference](/docs/api-reference) — Search and geo entrypoints
+- [Search notes (repo)](https://github.com/couchset/couchset/blob/master/docs/search-and-geo.md) — deeper unpublished notes

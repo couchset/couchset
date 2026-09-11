@@ -3,25 +3,34 @@ title: Connections and clients
 description: Configure singleton or client-owned connections and manage their lifecycle.
 ---
 
+CouchSet supports a shared **singleton** connection (legacy `Model` + `couchset()`) and **client-owned** connections (`createCouchsetClient`). Prefer the client when you want dependency injection, isolated tests, or multiple registries.
+
 ## Singleton lifecycle
 
 Models may be declared before connecting. Operations wait for the shared connection.
 
 ```ts
 import { couchset, health, ping, ready, shutdown } from 'couchset/next';
-await couchset({ connectionString, username, password, bucketName,
-  autoReconnect: true, reconnectIntervalMs: 5_000 });
+
+await couchset({
+  connectionString,
+  username,
+  password,
+  bucketName,
+  autoReconnect: true,
+  reconnectIntervalMs: 5_000,
+});
 await ready();
 await ping();
 console.log(health());
 await shutdown();
 ```
 
-Reconnect defaults to enabled. `COUCHSET_RECONNECT=false`, `0`, or `no` disables it; `COUCHSET_RECONNECT_INTERVAL_MS` changes the default 5,000 ms interval. The helpers are also properties of `couchset`.
+Reconnect defaults to **enabled**. `COUCHSET_RECONNECT=false`, `0`, or `no` disables it; `COUCHSET_RECONNECT_INTERVAL_MS` changes the default 5,000 ms interval. The same helpers are also properties of `couchset`.
 
 ## Environment starters
 
-`startCouchbase()` and `startCouchbaseServerless()` read `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, and optional `COUCHBASE_PROXY`. One `DB_URL` takes precedence:
+`startCouchbase()` and `startCouchbaseServerless()` read `COUCHBASE_URL`, `COUCHBASE_BUCKET`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, and optional `COUCHBASE_PROXY`. A single `DB_URL` takes precedence when set:
 
 ```bash
 DB_URL=couchbase://user:password@localhost:11210/app
@@ -33,16 +42,54 @@ Explicit starter options override environment values. Use `couchbases://` for TL
 ## Client-owned lifecycle
 
 ```ts
+import { createCouchsetClient, defineModel } from 'couchset/next';
+
+const users = defineModel<{ id: string; email: string }>({ name: 'User' });
+
 const db = createCouchsetClient({
-  connectionString, username, password, bucketName: 'app', models: [users],
+  connectionString,
+  username,
+  password,
+  bucketName: 'app',
+  models: [users],
 });
+
 await db.ready();
 const model = db.model(users);
 await db.shutdown();
 ```
 
-Each client owns its connection and registry. It does not use the singleton reconnect loop or retry arbitrary writes. Tests may inject a connection, cluster/bucket, or `connect(settings)` through `dependencies`.
+Each client owns its connection and registry. It does **not** use the singleton reconnect loop or retry arbitrary writes. Tests may inject a connection, cluster/bucket, or `connect(settings)` through `dependencies`.
 
 <Callout type="warn" title="Binding is not provisioning">
 Binding or registering a model performs no I/O unless dynamic registration receives an explicit `provision` option.
 </Callout>
+
+```ts
+await db.registerModel(reportDefinition, {
+  provision: { collections: true, indexes: true, waitForIndexes: true },
+});
+```
+
+## When to use which
+
+| Style | Fit |
+| --- | --- |
+| Singleton `couchset` + `new Model` | Simple apps already on the shared connection |
+| `createCouchsetClient` | DI, multiple apps/tests, manifests, admin bootstrap |
+
+Typed helpers (`defineModel`, includes, Search, Eventing controllers) are centered on the client API; legacy `Model` continues to work on the singleton.
+
+## Pitfalls
+
+- Calling model methods before `couchset()` / `db.ready()` without understanding wait vs fail behavior in your path.
+- Expecting client-owned connections to auto-reconnect like the singleton.
+- Assuming `models: [...]` in the constructor provisions cluster resources.
+- Putting secrets in URLs without encoding reserved characters.
+
+## See also
+
+- [Models and definitions](/docs/models) — definitions and binding
+- [Provisioning and transactions](/docs/provisioning-and-transactions) — ensure/plan
+- [Getting started](/docs/getting-started) — first connection walkthrough
+- [API reference](/docs/api-reference) — client and singleton entrypoints
