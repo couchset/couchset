@@ -1,0 +1,156 @@
+---
+title: Time series
+description: Chunk readings with TimeSeriesModel, append safely, and query Couchbase _timeseries ranges.
+---
+
+`TimeSeriesModel` stores dense readings as Couchbase time-series documents and queries them with SQL++ `_timeseries`. It sits beside ordinary models: writes go through the underlying `Model` as upserted chunks; reads build parameterized `_timeseries` queries.
+
+## Minimal example
+
+```ts
+import { TimeSeriesModel } from 'couchset/next';
+
+type Metric = { deviceId: string; timestamp: number; temperature: number };
+
+const metrics = new TimeSeriesModel<Metric>('Metric', {
+  keyField: 'deviceId',
+  timeField: 'timestamp',
+  values: [{ field: 'temperature' }],
+  chunkSize: 'day', // hour | day | month (default day)
+  interval: '1m', // optional regular sampling interval
+});
+
+await metrics.appendChunk('device-1', [
+  { deviceId: 'device-1', timestamp: Date.now(), temperature: 21.5 },
+]);
+
+const points = await metrics.range('device-1', {
+  startDate: Date.now() - 60 * 60 * 1000,
+  endDate: Date.now(),
+});
+```
+
+## Options
+
+| Option | Required | Notes |
+| --- | --- | --- |
+| `keyField` | yes | Series identity field on each row (also stored on the chunk document) |
+| `timeField` | yes | Per-row timestamp field (`Date`, ISO string, or epoch ms) |
+| `values` | yes | Fields packed into `ts_data` — strings or `{ field, alias?, index?, aggregate? }` |
+| `chunkSize` | no | `hour`, `day`, or `month` (default `day`) — controls chunk document IDs |
+| `interval` | no | Regular sample spacing: milliseconds or strings like `250ms`, `5s`, `3m`, `2h`, `1d` |
+| `model` | no | Inject an existing `Model`; otherwise `new Model(name)` is created |
+
+`intervalToMilliseconds()` is exported for the same unit grammar when you need it outside the model.
+
+## Chunk identity
+
+Chunk document IDs are UTC-stable:
+
+```ts
+metrics.chunkId('device-1', '2026-05-17T23:20:00.000Z');
+// Metric:device-1:2026-05-17          (day)
+
+metrics.chunkId('device-1', '2026-05-17T23:20:00.000Z', 'hour');
+// Metric:device-1:2026-05-17T23
+
+metrics.chunkId('device-1', '2026-05-17T23:20:00.000Z', 'month');
+// Metric:device-1:2026-05
+```
+
+Shape: `{name}:{key}:{utcPart}`.
+
+## Building and appending chunks
+
+`buildChunk(key, rows, options?)` sorts rows by `timeField`, packs `ts_data`, and returns a chunk object without writing. Empty `rows` throws.
+
+`appendChunk(key, rows, options?)` builds that chunk, loads any existing document with the same id, **concatenates** `ts_data` / `rows`, widens `ts_start` / `ts_end`, then `upsert`s.
+
+```ts
+const draft = metrics.buildChunk('device-1', rows, { chunkSize: 'hour' });
+await metrics.appendChunk('device-1', rows, {
+  chunkDate: rows[0].timestamp,
+  chunkSize: 'hour',
+  interval: '1m',
+  writeOptions: { /* passed to Model.upsert */ },
+});
+```
+
+### Regular vs irregular `ts_data`
+
+- **With `interval`** — each `ts_data` entry is only the value vector (`[temperature, …]`). Timing is implied by `ts_interval` plus position in the series conventions Couchbase expects for regular data.
+- **Without `interval`** — each entry is `[timestampMs, ...values]` so irregular samples keep explicit times.
+
+Value order follows the `values` list; `index` defaults to list order and is what range SQL selects as `t._v{index}`.
+
+## Range queries
+
+`rangeQuery(key, args)` returns `{ query, params }` with no I/O. `range(key, args, options?)` runs it via `queryRows`.
+
+```ts
+const raw = await metrics.range('device-1', {
+  startDate: '2026-05-17T10:00:00.000Z',
+  endDate: '2026-05-17T11:00:00.000Z',
+  order: 'ASC', // or DESC
+  limit: 1000,
+  where: { /* extra equality filters on the chunk document `d.` */ },
+});
+```
+
+Filters always include `_type`, the key field, and overlapping `ts_start`/`ts_end`. Queries `UNNEST _timeseries(d, {"ts_ranges": [$rangeStart, $rangeEnd]})`.
+
+### Point samples
+
+Without `args.interval`, each row exposes:
+
+- `timeField` as `MILLIS_TO_TZ(t._t, "UTC")`
+- `time` as `t._t`
+- each value as `t._v{index} AS alias`
+
+### Aggregated buckets
+
+With `args.interval`, samples are grouped with `IDIV(t._t, $intervalMs) * $intervalMs`. Each value uses `mapping.aggregate` or **`AVG`** by default (`SUM`, `MIN`, `MAX`, `COUNT` also allowed).
+
+```ts
+const series = new TimeSeriesModel('Metric', {
+  keyField: 'deviceId',
+  timeField: 'timestamp',
+  values: [
+    { field: 'temperature', aggregate: 'AVG' },
+    { field: 'humidity', alias: 'humidityAvg', aggregate: 'AVG' },
+  ],
+});
+
+const buckets = await series.range('device-1', {
+  startDate: start,
+  endDate: end,
+  interval: '5m',
+});
+```
+
+## Concurrency
+
+`appendChunk` is **read → merge → upsert**, not a CAS compare-and-swap loop. Concurrent writers to the same chunk id can lose updates unless the application serializes writers (queue, lock, or single ingest worker) or uses a stronger custom write path.
+
+## Planning helpers
+
+| Method | Role |
+| --- | --- |
+| `chunkId` | Compute document id |
+| `buildChunk` | Pure chunk assembly |
+| `rangeQuery` | SQL++ + params without executing |
+| `queryRows` | Escape hatch to run arbitrary SQL++ on the underlying model |
+
+## Pitfalls
+
+- Chunk boundaries use **UTC** calendar parts, not local timezones.
+- `appendChunk` requires at least one row.
+- Interval strings must match `^(\d+)\s*(ms|s|m|h|d)$` or be a number of milliseconds.
+- Aggregation in `range` only applies when `args.interval` is set; model-level `interval` affects how chunks are packed on write, not automatic read bucketing.
+- Query service and suitable indexes are required for `_timeseries` reads; this helper does not create indexes for you.
+
+## See also
+
+- [CRUD and queries](./crud-and-queries) — underlying model reads/writes
+- [Models and definitions](./models) — keyspaces and the Model used for chunks
+- [API reference](./api-reference) — `TimeSeriesModel`, `intervalToMilliseconds`
