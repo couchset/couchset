@@ -1,6 +1,6 @@
 ---
 title: Operations and CLI
-description: Apply reviewed plans from the CLI and use time-series helpers.
+description: Apply reviewed collection, index, search, and Eventing plans from the CLI.
 ---
 
 ## CLI
@@ -22,6 +22,3 @@ npx couchset eventing plan --config ./couchset.config.cjs
 
 Plan/apply commands print JSON. Collection plans return `{scope, collection, status:'create'|'matching'}[]`; collection apply is create-only and uniquely needs no plan file. GSI plan items contain `status` (`create`, `matching`, `replace`), logical definition, keyspace/target, physical `createAs`, optional `replaces`, and reason. Search plan items likewise describe create/match/replace and retain catalog identity so stale plans fail. Index apply consumes exactly the reviewed JSON; GSI old-index removal is not exposed by the CLI, and Search replacement stays gated by `--allow-replace`.
 
-## Time series
-
-`TimeSeriesModel` chunks readings by hour/day/month for Couchbase `_timeseries`. `appendChunk` upserts, `range` queries, while `buildChunk`/`rangeQuery` are planning helpers. Intervals accept milliseconds or `ms`, `s`, `m`, `h`, `d`. Aggregates include AVG, SUM, MIN, MAX, COUNT. Concurrent writers to one chunk need an application concurrency strategy.

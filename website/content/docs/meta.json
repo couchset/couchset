@@ -12,6 +12,7 @@
     "extensions",
     "search-and-geo",
     "eventing",
+    "time-series",
     "operations-cli-eventing",
     "api-reference"
   ]
