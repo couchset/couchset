@@ -18,7 +18,7 @@ npx couchset search-indexes apply --config ./couchset.config.cjs --plan ./search
 npx couchset eventing plan --config ./couchset.config.cjs
 ```
 
-`model` only prints. Admin commands load trusted code exporting registered `db`; export `eventing` for its plan (see [Eventing](./eventing)). Search replacement also requires `--allow-replace`. There is no import-time DDL, automatic index drop, or automatic Eventing deployment/prune. The CLI closes its client.
+`model` only prints. Admin commands load trusted code exporting registered `db`; export `eventing` for its plan (see [Eventing](/docs/eventing)). Search replacement also requires `--allow-replace`. There is no import-time DDL, automatic index drop, or automatic Eventing deployment/prune. The CLI closes its client.
 
 Plan/apply commands print JSON. Collection plans return `{scope, collection, status:'create'|'matching'}[]`; collection apply is create-only and uniquely needs no plan file. GSI plan items contain `status` (`create`, `matching`, `replace`), logical definition, keyspace/target, physical `createAs`, optional `replaces`, and reason. Search plan items likewise describe create/match/replace and retain catalog identity so stale plans fail. Index apply consumes exactly the reviewed JSON; GSI old-index removal is not exposed by the CLI, and Search replacement stays gated by `--allow-replace`.
 
