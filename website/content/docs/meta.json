@@ -1,1 +1,18 @@
-{"title":"CouchSet","pages":["index","getting-started","connection","models","crud-and-queries","validation-and-codecs","relationships-and-hydration","provisioning-and-transactions","extensions","search-and-geo","operations-cli-eventing","api-reference"]}
+{
+  "title": "CouchSet",
+  "pages": [
+    "index",
+    "getting-started",
+    "connection",
+    "models",
+    "crud-and-queries",
+    "validation-and-codecs",
+    "relationships-and-hydration",
+    "provisioning-and-transactions",
+    "extensions",
+    "search-and-geo",
+    "eventing",
+    "operations-cli-eventing",
+    "api-reference"
+  ]
+}
