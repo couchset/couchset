@@ -3,6 +3,8 @@ title: API reference
 description: Public entrypoints, methods, helpers, and return shapes.
 ---
 
+Concise inventory of public surfaces. Prefer the topic guides for behavior, pitfalls, and examples; this page is for **what is exported** and return shapes.
+
 ## Entrypoints
 
 | Import | Purpose |
@@ -15,43 +17,96 @@ description: Public entrypoints, methods, helpers, and return shapes.
 
 ## Model inventory
 
-Reads: `getById`, `findByIdWithMeta`, `getWithCas`, `findMany`, `findOne`, `exists`, `count`, `page`. Writes: `insert`, `prepareInsert`, `upsert`, `replaceById`, `prepareReplace`, `replaceIfCas`, `patchById`, `incrementById`, `mutateById`, `deleteById`, `consumeOnce`. Soft deletion: `softDeleteById`, `restoreById`, `withDeleted`, `onlyDeleted`, `withoutDefaultWhere`. Hydration: `findDocById`, `findDocOne`, `hydrate`. SQL++: `queryRows`, `queryOne`, `queryPage`, `bucket`, `keyspace`, `from`. Indexes: `indexStatements`, instance/static `ensureIndexes`. Low-level: `getCollection`, `parse`, `parseProjection`, `serialize`, `serializeField`.
+### Reads
 
-`findMany` defaults to 10 rows/page 0; `findOne` forces limit 1. `throwOnError:false` converts query failures to an empty/null/false/zero result. `count` and `exists` reject includes. Key-value `getById` throws SDK not-found, while `findOne` returns `null`. `findByIdWithMeta`/`getWithCas` return `{content,cas,expiryTime?}`. A model page returns `{items,hasNext,pageInfo}` with `limit`, `page`, `offset`, and nullable `nextPage`/`nextOffset`.
+`getById`, `findByIdWithMeta`, `getWithCas`, `findMany`, `findOne`, `exists`, `count`, `page`
+
+- `findMany` defaults to **10** rows / page `0`; `findOne` forces limit `1`.
+- `throwOnError: false` converts query failures to empty / `null` / `false` / `0`.
+- `count` and `exists` **reject** includes.
+- Key-value `getById` throws SDK not-found; `findOne` returns `null`.
+- `findByIdWithMeta` / `getWithCas` return `{ content, cas, expiryTime? }`.
+- Model `page` returns `{ items, hasNext, pageInfo }` with `limit`, `page`, `offset`, and nullable `nextPage` / `nextOffset`.
+
+Guide: [CRUD and queries](/docs/crud-and-queries), [Relationships and hydration](/docs/relationships-and-hydration).
+
+### Writes
+
+`insert`, `prepareInsert`, `upsert`, `replaceById`, `prepareReplace`, `replaceIfCas`, `patchById`, `incrementById`, `mutateById`, `deleteById`, `consumeOnce`
+
+Soft deletion: `softDeleteById`, `restoreById`, `withDeleted`, `onlyDeleted`, `withoutDefaultWhere`.
+
+Hydration: `findDocById`, `findDocOne`, `hydrate`.
+
+### SQL++ and keyspace
+
+`queryRows`, `queryOne`, `queryPage`, `bucket`, `keyspace`, `from`
+
+Indexes: `indexStatements`, instance / static `ensureIndexes`.
+
+Low-level: `getCollection`, `parse`, `parseProjection`, `serialize`, `serializeField`.
 
 ## Client inventory
 
-Lifecycle: `ready`, `shutdown`, `getConnection`. Registry/keyspace: `model`, `registerModel`, `definitions`, `keyspace`. Collections: `planCollections`, `ensureCollections`, combined `provision`. GSI: `planIndexes`, `applyIndexPlan`, `ensureIndexes`. Search: `search`, `planSearchIndexes`, `applySearchIndexPlan`. Other: `geo`, `transaction`, `eventing`.
+| Area | Methods |
+| --- | --- |
+| Lifecycle | `ready`, `shutdown`, `getConnection` |
+| Registry | `model`, `registerModel`, `definitions`, `keyspace` |
+| Collections | `planCollections`, `ensureCollections`, combined `provision` |
+| GSI | `planIndexes`, `applyIndexPlan`, `ensureIndexes` |
+| Search | `search`, `planSearchIndexes`, `applySearchIndexPlan` |
+| Other | `geo`, `transaction`, `eventing` |
 
-`planCollections` reports create/matching targets. `provision({collections?,indexes?,waitForIndexes?})` returns collection results and index statements. Registration provisions only with an explicit `provision` option. `keyspace(definition)` renders the client bucket plus the definition target without connecting, provisioning, or requiring registration. `getConnection()` exposes the client-bound connection.
+- `planCollections` reports create / matching targets.
+- `provision({ collections?, indexes?, waitForIndexes? })` returns collection results and index statements.
+- Registration provisions only with an explicit `provision` option.
+- `keyspace(definition)` renders bucket + target **without** connecting, provisioning, or requiring registration.
+
+Guides: [Connections](/docs/connection), [Provisioning](/docs/provisioning-and-transactions), [Search](/docs/search-and-geo).
 
 ## Transactions and scoped views
 
-`CouchsetTransaction` provides `model(definition)` and attempt-bound `query(statement, options) -> {rows}`. `TransactionModel` provides nullable `get`/`getById`, `insert(id,data)`, `replace(document,data)`, `replaceById(id,data)`, `remove(document)`, and `query`. Pass the returned transaction document to replace/remove. `tx.model(definition)` binds and registers through its owning client on demand, but never provisions; the target resources must already exist.
+`CouchsetTransaction`: `model(definition)`, attempt-bound `query(statement, options) -> { rows }`.
 
-`ScopedModel` provides chainable named `scopes`, `inspect()` (a copied composed argument object), `findMany`, `findOne`, `page`, `exists`, and `count`. It forwards `withDeleted`, `onlyDeleted`, and `withoutDefaultWhere` while retaining scope predicates.
+`TransactionModel`: nullable `get` / `getById`, `insert(id, data)`, `replace(document, data)`, `replaceById(id, data)`, `remove(document)`, `query`. Pass the returned transaction document to replace / remove. `tx.model(definition)` binds/registers on demand but **never** provisions.
+
+`ScopedModel`: chainable named `scopes`, `inspect()`, `findMany`, `findOne`, `page`, `exists`, `count`; forwards `withDeleted` / `onlyDeleted` / `withoutDefaultWhere` while retaining scope predicates.
+
+Guides: [Provisioning and transactions](/docs/provisioning-and-transactions), [Extensions](/docs/extensions).
 
 ## Composition and helpers
 
-- `defineModel`, `defineModelPlugin`, `dateCodec`
-- `withModelValidator`, `ModelValidationError`, `ModelAfterHookError`
-- `joinField`, `withModelScopes`, `ScopedModel`, `withModelMethods`, `withDocumentMethods`
-- `bulkMap`, `withModelBulk`
-- `ModelGeo` (`withinBox`, `withinRadius`), `geoPoint`, `geoBounds`, `geoRadiusKm`, `radiusBounds`
-- `ModelSearch` (`query`, `match`, `vector`, `withinRadius`, `withinBox`, `withinPolygon`, `shape`), `buildModelSearchIndex`
-- `Eventing` (`definitions`, `register`, `define`, `physicalName`, `plan`, `apply`, `pause`, `remove`), `createEventing`, `createEventingWithManager`, `defineEventingFunction`
-- `createCouchsetTestFixture`; `TimeSeriesModel` (`chunkId`, `buildChunk`, `appendChunk`, `rangeQuery`, `range`, `queryRows`); `intervalToMilliseconds`
+| Group | Exports |
+| --- | --- |
+| Definitions | `defineModel`, `defineModelPlugin`, `dateCodec` |
+| Validation / hooks | `withModelValidator`, `ModelValidationError`, `ModelAfterHookError` |
+| Relationships / views | `joinField`, `withModelScopes`, `ScopedModel`, `withModelMethods`, `withDocumentMethods` |
+| Bulk | `bulkMap`, `withModelBulk` |
+| Geo | `ModelGeo` (`withinBox`, `withinRadius`), `geoPoint`, `geoBounds`, `geoRadiusKm`, `radiusBounds` |
+| Search | `ModelSearch` (`query`, `match`, `vector`, `withinRadius`, `withinBox`, `withinPolygon`, `shape`), `buildModelSearchIndex` |
+| Eventing | `Eventing` (`definitions`, `register`, `define`, `physicalName`, `plan`, `apply`, `pause`, `remove`), `createEventing`, `createEventingWithManager`, `defineEventingFunction` |
+| Tests / series | `createCouchsetTestFixture`; `TimeSeriesModel` (`chunkId`, `buildChunk`, `appendChunk`, `rangeQuery`, `range`, `queryRows`); `intervalToMilliseconds` |
 
-Modern runtime exports also include `couchset`, `couchsetServerless`, `ready`, `ping`, `health`, `shutdown`, `ensureIndexes`, `CouchbaseConnection`, `startCouchbase`, `startCouchbaseServerless`, `parseDatabaseUrl`, `getConnectionOptions`, `connectionOptions`, `QueryBuilder`, `selectBuilder`, `buildSelectExpr`, `buildWhereClauseExpr`, `buildIndexExpr`, `buildSelectArrayExpr`, the exported query exception classes/dictionaries, `parseStringSelectExpr`, `escapeReservedWords`, `CustomQuery`, `Pagination`, `createUpdate`, `TimeSeriesModel`, and `intervalToMilliseconds`.
+Modern runtime exports also include singleton helpers: `couchset`, `couchsetServerless`, `ready`, `ping`, `health`, `shutdown`, `ensureIndexes`, `CouchbaseConnection`, `startCouchbase`, `startCouchbaseServerless`, `parseDatabaseUrl`, `getConnectionOptions`, `connectionOptions`, plus query builders (`QueryBuilder`, `selectBuilder`, `buildSelectExpr`, `buildWhereClauseExpr`, `buildIndexExpr`, `buildSelectArrayExpr`, query exception classes/dictionaries, `parseStringSelectExpr`, `escapeReservedWords`, `CustomQuery`, `Pagination`, `createUpdate`).
 
-Type-only exports cover model/read/query/include/index/TTL/connection/pagination/search/geo/plugin/hook/instrumentation/Eventing/transaction/time-series contracts; they do not exist at runtime. Helpers used internally by the client—such as its UUID, keyspace, index, and raw where builders—are not package-root exports. Lower-level public builders do not automatically apply model filters, codecs, validation, hooks, or authorization.
+Type-only exports cover model / read / query / include / index / TTL / connection / pagination / search / geo / plugin / hook / instrumentation / Eventing / transaction / time-series contracts — they do **not** exist at runtime.
+
+Internal client helpers (UUID, keyspace, index, raw where builders) are **not** package-root exports. Lower-level public builders do **not** automatically apply model filters, codecs, validation, hooks, or authorization.
 
 ## Key returns
 
-- Model page: `{items, hasNext, pageInfo:{limit,page,offset,nextPage,nextOffset}}`
-- Raw query page: `{items, hasNext, params}`
-- CAS read: `{content, cas, expiryTime?}`
-- Consume: `{status:'consumed'|'missing'|'conflict'}`
-- Bulk item: `{index,status:'fulfilled',value}` / `{index,status:'rejected',error}` / `{index,status:'skipped'}`
+| Shape | Fields |
+| --- | --- |
+| Model page | `{ items, hasNext, pageInfo: { limit, page, offset, nextPage, nextOffset } }` |
+| Raw query page | `{ items, hasNext, params }` |
+| CAS read | `{ content, cas, expiryTime? }` |
+| Consume | `{ status: 'consumed' \| 'missing' \| 'conflict' }` |
+| Bulk item | `{ index, status: 'fulfilled', value }` / `{ index, status: 'rejected', error }` / `{ index, status: 'skipped' }` |
 
-SDK options/results retain Couchbase SDK types. Refer to that SDK for durability, timeout, consistency, mutation token, Search, and transaction option details.
+SDK options and results retain Couchbase SDK types. Refer to that SDK for durability, timeout, consistency, mutation token, Search, and transaction option details.
+
+## See also
+
+- [Getting started](/docs/getting-started)
+- [CRUD and queries](/docs/crud-and-queries)
+- [Operations and CLI](/docs/operations-cli-eventing)

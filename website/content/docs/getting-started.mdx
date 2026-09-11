@@ -5,22 +5,34 @@ description: Install CouchSet, choose an entrypoint, and run your first model op
 
 ## Requirements
 
-CouchSet needs Node.js, Couchbase Server or Capella, and credentials for an existing bucket. SQL++ reads require Query plus suitable indexes; Search and Eventing are needed only for those features.
+CouchSet needs **Node.js**, **Couchbase Server or Capella**, and credentials for an **existing bucket**.
+
+| Feature | Cluster needs |
+| --- | --- |
+| Key-value CRUD | Data service + bucket |
+| SQL++ reads (`findMany`, `page`, …) | Query service + suitable indexes |
+| Full-text / vector / Search geo | Search service |
+| Eventing reconcile | Eventing service + dedicated metadata collection |
 
 ```bash
 npm install couchset
+# or: pnpm add couchset / yarn add couchset
 ```
 
-## Modern API
+## Modern API (`couchset/next`)
 
-New applications should use `couchset/next`:
+New applications should import from `couchset/next`.
+
+### Singleton + `Model`
 
 ```ts
 import { couchset, Model } from 'couchset/next';
 
 type User = { email: string; displayName?: string };
+
 const users = new Model('User', {
-  scope: 'app', collection: 'users',
+  scope: 'app',
+  collection: 'users',
   indexes: [{ name: 'idx_user_email', fields: ['email'] }],
 });
 
@@ -35,9 +47,13 @@ const created = await users.insert<User>({ email: 'jane@example.com' });
 const found = await users.getById<User>(created.id);
 ```
 
-Inserted values include `id`, `createdAt`, `updatedAt`, `_type`, and `_scope`. `insert` rejects an existing ID; `upsert` is explicit insert-or-replace.
+Inserted values include `id`, `createdAt`, `updatedAt`, `_type`, and `_scope`. `insert` rejects an existing ID; use `upsert` for explicit insert-or-replace.
 
-For isolated registries and transactions, use definitions and a client:
+Models may be constructed before `couchset()`; operations wait for the shared connection. See [Connections and clients](/docs/connection).
+
+### Client + `defineModel`
+
+Prefer a client when you want isolated registries, DI, tests, or transactions:
 
 ```ts
 import { createCouchsetClient, dateCodec, defineModel } from 'couchset/next';
@@ -45,9 +61,13 @@ import { createCouchsetClient, dateCodec, defineModel } from 'couchset/next';
 type Session = { id: string; userId: string; expiresAt: Date };
 
 const sessions = defineModel<Session>({
-  name: 'Session', scope: 'auth', collection: 'sessions',
+  name: 'Session',
+  scope: 'auth',
+  collection: 'sessions',
   codecs: { expiresAt: dateCodec },
+  indexes: [{ name: 'idx_session_user', fields: ['userId'] }],
 });
+
 const db = createCouchsetClient({
   connectionString: process.env.COUCHBASE_URL ?? 'couchbase://localhost',
   username: process.env.COUCHBASE_USERNAME ?? 'Administrator',
@@ -55,18 +75,25 @@ const db = createCouchsetClient({
   bucketName: process.env.COUCHBASE_BUCKET ?? 'app',
   models: [sessions],
 });
+
 await db.ready();
 const sessionModel = db.model(sessions);
 ```
 
-`defineModel()` and `db.model()` perform no DDL.
+`defineModel()` and `db.model()` perform **no DDL**. Create scopes/collections/indexes explicitly (API or [CLI](/docs/operations-cli-eventing)):
 
-## Legacy default
+```ts
+await db.ensureCollections();
+await db.ensureIndexes({ waitForIndexes: true });
+```
+
+## Legacy default (`couchset`)
 
 The package root preserves the older API:
 
 ```ts
 import { couchset, Model } from 'couchset';
+
 await couchset({ connectionString, username, password, bucketName });
 const users = new Model('User');
 const created = await users.create({ email: 'jane@example.com' });
@@ -75,4 +102,23 @@ await users.updateById(created.id, { ...found, email: 'new@example.com' });
 await users.delete(created.id);
 ```
 
-Do not mix assumptions between the legacy and modern entrypoints.
+Do **not** mix assumptions between legacy and modern entrypoints (method names and defaults differ).
+
+## What to read next
+
+1. [Models and definitions](/docs/models) — keyspaces, soft delete, keys  
+2. [CRUD and queries](/docs/crud-and-queries) — filters, pagination, TTL  
+3. [Validation and codecs](/docs/validation-and-codecs) — dates and write validation  
+4. [Provisioning and transactions](/docs/provisioning-and-transactions) — ensure/plan/CAS  
+
+## Pitfalls
+
+- Expecting import or `db.model()` to create collections/indexes.
+- Mixing `couchset` and `couchset/next` APIs in one codebase without clear boundaries.
+- Running SQL++ reads before Query indexes exist.
+- Using Capella / TLS without `couchbases://` and encoded credentials ([Connections](/docs/connection)).
+
+## See also
+
+- [CouchSet documentation](/docs) — capability map
+- [API reference](/docs/api-reference) — export inventory
