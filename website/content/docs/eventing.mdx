@@ -1,0 +1,367 @@
+---
+title: Eventing
+description: Declare, plan, and reconcile Couchbase Eventing functions with an explicit namespace and metadata keyspace.
+---
+
+CouchSet wraps the Couchbase SDK `EventingFunctionManager` as a declarative reconciler. Handlers are not document writes and are never deployed merely because a module imported. You declare functions in code (or a CLI config), review drift with `plan()`, then opt into `apply()`.
+
+<Callout type="info" title="Explicit ops only">
+Importing models or constructing `db.eventing(...)` does not create, deploy, pause, or prune functions. There is no import-time Eventing DDL.
+</Callout>
+
+## Prerequisites
+
+- Couchbase Server or Capella with the **Eventing** service enabled.
+- Cluster credentials that can manage Eventing functions.
+- A **dedicated metadata collection** that already exists. CouchSet never creates it, never opens it as an application collection, and never reads or writes its documents. Couchbase Eventing alone uses it for checkpoints and timers.
+- The metadata collection must be **non-`_default`**. Passing `_default` (or omitting `collection`) throws.
+- Source and metadata keyspaces must be **distinct**.
+
+## Minimal example
+
+```ts
+import { defineEventingFunction } from 'couchset/next';
+
+// Assume `db` is a CouchsetClient from couchset/next with an open connection.
+
+const auditOrders = defineEventingFunction({
+  name: 'audit_orders', // physical Couchbase name: billing__audit_orders
+  code: 'function OnUpdate(doc, meta) { log(meta.id); }',
+  sourceKeyspace: { bucket: 'app', scope: 'sales', collection: 'orders' },
+});
+
+const eventing = db.eventing({
+  namespace: 'billing',
+  metadataKeyspace: {
+    bucket: 'app',
+    scope: 'eventing',
+    collection: 'billing_metadata', // must already exist
+  },
+  definitions: [auditOrders],
+});
+
+const drift = await eventing.plan();
+// { functions: [{ name: 'billing__audit_orders', action: 'create' | 'matching' | 'update' | 'requires-recreate' }],
+//   staleOwnedFunctions: string[] }
+
+const report = await eventing.apply();
+```
+
+`defineEventingFunction()` is a typed identity helper: it returns the same object and documents the expected shape. You can also pass plain objects into `definitions` / `register` / `apply(definition)`.
+
+## Namespace and physical names
+
+`EventingOptions.namespace` is required and non-empty. CouchSet owns only functions whose physical names start with `{namespace}__`.
+
+| Concept | Example |
+| --- | --- |
+| Namespace | `billing` |
+| Logical name (what you pass to APIs) | `audit_orders` |
+| Physical Couchbase name | `billing__audit_orders` |
+
+Use logical names with `pause`, `remove`, `physicalName`, and reports. Passing an already-prefixed physical name throws.
+
+```ts
+eventing.physicalName('audit_orders'); // 'billing__audit_orders'
+eventing.namespace; // 'billing'
+eventing.definitions(); // in-memory copies; no I/O
+```
+
+Register additional handlers without touching the cluster:
+
+```ts
+eventing.register({
+  name: 'audit_deletes',
+  code: 'function OnDelete(meta) { log(meta.id); }',
+  sourceKeyspace: { bucket: 'app', scope: 'sales', collection: 'orders' },
+});
+// `define()` is an alias for `register()`
+```
+
+## Function definition shape
+
+Every definition needs:
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `name` | yes | Logical name; non-empty |
+| `code` | yes | Handler JavaScript string (`OnUpdate` / `OnDelete` / timers as Couchbase expects) |
+| `sourceKeyspace` | yes | `{ bucket, scope?, collection? }`; omitted scope/collection normalize to `_default` |
+| `enforceSchema` | no | Forwarded to the SDK function definition |
+| `bucketBindings` | no | SDK bucket bindings |
+| `urlBindings` | no | SDK URL bindings |
+| `constantBindings` | no | SDK constant bindings |
+| `settings` | no | Partial SDK `EventingFunctionSettings` (deployment/processing status are managed by reconciliation) |
+
+### Example with bindings
+
+```ts
+const enrichOrders = defineEventingFunction({
+  name: 'enrich_orders',
+  code: `
+function OnUpdate(doc, meta) {
+  if (!doc.customerId) return;
+  var customer = src_customers[doc.customerId];
+  if (customer) {
+    doc.customerName = customer.name;
+    tgt_orders[meta.id] = doc;
+  }
+}
+`,
+  sourceKeyspace: { bucket: 'app', scope: 'sales', collection: 'orders' },
+  bucketBindings: [
+    {
+      alias: 'src_customers',
+      bucketName: 'app',
+      scopeName: 'sales',
+      collectionName: 'customers',
+      access: 'r',
+    },
+    {
+      alias: 'tgt_orders',
+      bucketName: 'app',
+      scopeName: 'sales',
+      collectionName: 'orders',
+      access: 'rw',
+    },
+  ],
+});
+```
+
+Binding object shapes follow the Couchbase Node SDK Eventing types; keep aliases and access modes consistent with your cluster version.
+
+## Controller options
+
+```ts
+const eventing = db.eventing({
+  namespace: 'billing',
+  metadataKeyspace: { bucket: 'app', scope: 'eventing', collection: 'billing_metadata' },
+  definitions: [auditOrders], // or `functions:` — alias for the same list
+  lifecycleTimeoutMs: 30_000, // max wait for deploy/pause/undeploy convergence (default 30000)
+  lifecyclePollIntervalMs: 250, // status poll delay (default 250)
+});
+```
+
+Tests (or an owned cluster) can inject `manager` implementing `EventingFunctionManagerLike` instead of using the connected SDK cluster.
+
+## Plan vs apply
+
+### `plan()` — read-only drift
+
+`plan()` never pauses, deploys, upserts, or prunes. For each registered definition it reports a physical name and one of:
+
+| Action | Meaning |
+| --- | --- |
+| `create` | No live function with that physical name |
+| `matching` | Live function matches the desired definition |
+| `update` | Code, bindings, settings, or non-keyspace fields differ |
+| `requires-recreate` | Source or metadata keyspace changed (destructive; see below) |
+
+It also lists `staleOwnedFunctions`: live functions owned by this namespace (`{namespace}__*`) that are **not** in the current in-memory manifest.
+
+### `apply()` — reconcile
+
+Two overloads:
+
+```ts
+// Reconcile every registered definition, then prune stale owned functions
+await eventing.apply();
+await eventing.apply({ allowRecreate: true });
+
+// Surgical: register/reconcile only this definition; never prunes others
+await eventing.apply(auditOrders);
+await eventing.apply(auditOrders, { allowRecreate: true });
+```
+
+**Ordinary updates** (code, bindings, settings): CouchSet safely pauses if needed, upserts, then reactivates. Reactivation uses `resume` or `deploy` depending on Eventing status after the upsert. Matching paused functions resume; matching deployed functions are no-ops.
+
+**Keyspace changes** (source or metadata): Couchbase must undeploy first, which **erases Eventing timers and checkpoints**. Without `allowRecreate: true`, `apply()` records `requires-recreate` and leaves the live function unchanged. With the flag, CouchSet performs the destructive recreate path.
+
+<Callout type="warn" title="Timers and checkpoints">
+Undeploying (recreate with `allowRecreate`, or `remove`) erases that function's Eventing timers and checkpoints. Review `plan()` / `requiresRecreate` before opting in.
+</Callout>
+
+## Pause and remove
+
+```ts
+await eventing.pause('audit_orders'); // non-destructive; no-op if missing, undeployed, or already paused
+await eventing.remove('audit_orders'); // undeploy (if deployed) then drop; drops in-memory registration too
+```
+
+`remove` always implies timer/checkpoint loss when the function was deployed. Both return an `EventingReport`.
+
+## Reports
+
+Every mutating call returns:
+
+```ts
+type EventingReport = {
+  outcomes: EventingOutcome[]; // execution order
+  created: EventingOutcome[];
+  updated: EventingOutcome[];
+  resumed: EventingOutcome[];
+  unchanged: EventingOutcome[];
+  pruned: EventingOutcome[];
+  paused: EventingOutcome[];
+  removed: EventingOutcome[];
+  requiresRecreate: EventingOutcome[];
+};
+```
+
+Each outcome includes `action`, ordered `actions` (a single update may appear in both `paused` and `resumed` because that is the safe update lifecycle), logical `name`, `physicalName`, optional `timerStateLost`, and optional `message`.
+
+Inspect arrays directly — you do not need to parse free text.
+
+
+## Timers and HTTP callbacks
+
+Couchbase Eventing timers (`createTimer` / `cancelTimer`) live in the function's metadata keyspace. They are erased when the function is undeployed — including `remove` and keyspace recreate with `allowRecreate: true`. After a redeploy, pair timers with an application-side reconciliation pass for anything already overdue.
+
+### Schedule, cancel, and fire
+
+A common pattern: arm a timer when a document becomes active with a future due time, cancel it when the document leaves that state or is deleted, and let the timer callback call your API.
+
+```ts
+const closeOffer = defineEventingFunction({
+  name: 'close_offer',
+  sourceKeyspace: { bucket: 'app', scope: 'sales', collection: 'offers' },
+  urlBindings: [
+    {
+      alias: 'closure',
+      hostname: 'https://api.example.com/internal/close-offer',
+      auth: { method: 'bearer', key: process.env.CLOSURE_SERVICE_TOKEN! },
+      allowCookies: false,
+      validateSslCertificate: true,
+    },
+  ],
+  code: `
+function OnUpdate(doc, meta) {
+  if (doc.status !== 'ACTIVE') {
+    cancelTimer(closeOffer, meta.id);
+    return;
+  }
+  var due = new Date(doc.endsAt).getTime();
+  // Mutations after the due time must not reset an overdue callback's backoff.
+  // A startup/periodic reconciler should cover overdue docs after redeployment.
+  if (!isFinite(due) || due <= Date.now()) return;
+  createTimer(closeOffer, new Date(due), meta.id, {
+    offerId: meta.id,
+    attempt: 0,
+  });
+}
+
+function OnDelete(meta, options) {
+  cancelTimer(closeOffer, meta.id);
+}
+
+function closeOffer(context) {
+  // Rearm first so curl timeouts or callback interruption cannot lose recovery.
+  var attempt = Math.min((context.attempt || 0) + 1, 10);
+  var delayMs = Math.min(60000 * Math.pow(2, attempt - 1), 3600000);
+  createTimer(
+    closeOffer,
+    new Date(Date.now() + delayMs),
+    context.offerId,
+    { offerId: context.offerId, attempt: attempt }
+  );
+  try {
+    var response = curl('POST', closure, {
+      body: { offerId: context.offerId },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (response.status === 200) {
+      cancelTimer(closeOffer, context.offerId);
+      return;
+    }
+    log('Offer closure HTTP failure', context.offerId, response.status, attempt);
+  } catch (error) {
+    log('Offer closure transport failure', context.offerId, attempt);
+  }
+}
+`,
+});
+```
+
+Notes grounded in how Eventing actually behaves with CouchSet:
+
+- **Timer id** — use a stable document key (`meta.id`) so updates replace the same timer and deletes can cancel it.
+- **Context payload** — pass only what the callback needs (`offerId`, `attempt`); keep it small.
+- **Rearm-before-work** — schedule the next attempt before `curl` so a timeout still leaves a retry armed.
+- **Backoff** — exponential with a cap (example: 1m → … → 1h, max 10 attempts of re-arm).
+- **Success cancels** — on HTTP 200, `cancelTimer` so the rearmed retry does not fire.
+- **URL bindings** — configure a fixed hostname in the definition; do not derive destinations from request headers or document fields that an attacker can influence.
+- **Bearer auth** — SDK 4.7 serializes bearer auth as `method: 'bearer'` with `key` holding the token. Prefer a long random service token validated by your API.
+- **Redeploy gap** — because undeploy clears timers, keep a separate reconciler that finds overdue `ACTIVE` documents and settles them (or re-arms work) after `apply` / cluster maintenance.
+
+### URL binding typing tip
+
+CouchSet forwards SDK binding shapes. If your TypeScript build does not surface the bearer enum value, assert the auth object the way the SDK serializes it:
+
+```ts
+type UrlAuth = NonNullable<
+  NonNullable<EventingDefinition['urlBindings']>[number]['auth']
+>;
+
+auth: { method: 'bearer', key: token } as UrlAuth & { key: string },
+```
+
+Import `EventingDefinition` from `couchset/next` when you need that type.
+
+## CLI
+
+Administrative commands load trusted config code that exports a connected client as `db`. For Eventing planning, also export the controller as `eventing`:
+
+```js
+// couchset.config.cjs (sketch)
+const { createCouchsetClient, defineEventingFunction } = require('couchset/next');
+
+const db = createCouchsetClient(/* ... */);
+// register models, connect, etc.
+
+const eventing = db.eventing({
+  namespace: 'billing',
+  metadataKeyspace: { bucket: 'app', scope: 'eventing', collection: 'billing_metadata' },
+  definitions: [
+    defineEventingFunction({
+      name: 'audit_orders',
+      code: 'function OnUpdate(doc, meta) { log(meta.id); }',
+      sourceKeyspace: { bucket: 'app', scope: 'sales', collection: 'orders' },
+    }),
+  ],
+});
+
+module.exports = { db, eventing };
+```
+
+```bash
+npx couchset eventing plan --config ./couchset.config.cjs
+```
+
+Plan output is JSON. There is no automatic Eventing deploy or prune from the CLI beyond what you invoke in your own scripts; keep config free of surprise provisioning side effects. The CLI closes its client when finished.
+
+See also [Operations and CLI](./operations-cli-eventing) for the full command list.
+
+## Recommended workflow
+
+1. Provision the dedicated metadata collection out of band (or with CouchSet collection planning for non-Eventing resources).
+2. Declare handlers with `defineEventingFunction` and a stable `namespace`.
+3. `await eventing.plan()` and review `functions` + `staleOwnedFunctions`.
+4. `await eventing.apply()` for full reconcile + prune of stale **owned** names, or `apply(definition)` for a surgical change.
+5. Only pass `{ allowRecreate: true }` after accepting timer/checkpoint loss for keyspace moves.
+6. Use `pause` for temporary disable; `remove` for intentional teardown.
+
+## Pitfalls
+
+- **Wrong collection for metadata** — `_default` is rejected; use a dedicated collection reserved for Eventing.
+- **Same source and metadata keyspace** — rejected at registration time.
+- **Expecting import to deploy** — never happens; always `apply`.
+- **Full `apply()` prunes** — only names owned by this namespace that are missing from the current manifest. Surgical `apply(definition)` never prunes.
+- **Physical names in APIs** — pass logical names (`audit_orders`), not `billing__audit_orders`.
+- **Transitional state** — if Couchbase is mid-deploy/pause, reconciliation waits up to `lifecycleTimeoutMs` and errors if the function stays transitional.
+
+## See also
+
+- [Operations and CLI](./operations-cli-eventing) — CLI inventory and time-series helpers
+- [Provisioning and transactions](./provisioning-and-transactions) — explicit collection/index planning
+- [API reference](./api-reference) — `Eventing`, `defineEventingFunction`, and related exports
+- [Next primitives (Eventing)](https://github.com/couchset/couchset/blob/master/docs/next-primitives.md#eventing-functions) — deeper lifecycle notes not yet on the site
