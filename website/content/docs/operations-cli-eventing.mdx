@@ -3,11 +3,50 @@ title: Operations and CLI
 description: Apply reviewed collection, index, search, and Eventing plans from the CLI.
 ---
 
-## CLI
+The `couchset` CLI is an **explicit** admin surface: plan and apply against a trusted config that exports your client. It never discovers projects, never provisions on import, and never silently drops indexes or Eventing functions.
+
+## Install and help
 
 ```bash
 npx couchset --help
-npx couchset model User
+# or, after npm install -g / local bin:
+couchset --help
+```
+
+`couchset model User` only **prints** a starter `defineModel` snippet — it does not write files.
+
+## Config
+
+Admin commands require `--config ./couchset.config.cjs`. The file is **trusted application code**. It must export `db` as a `CouchsetClient` with models registered. Export `eventing` for `eventing plan`.
+
+```js
+// couchset.config.cjs — illustrative; keep free of provisioning side effects
+const { createCouchsetClient, defineModel } = require('couchset/next');
+
+const users = defineModel({
+  name: 'User',
+  scope: 'app',
+  collection: 'users',
+  indexes: [{ name: 'idx_user_email', fields: ['email'] }],
+});
+
+const db = createCouchsetClient({
+  connectionString: process.env.COUCHBASE_URL,
+  username: process.env.COUCHBASE_USERNAME,
+  password: process.env.COUCHBASE_PASSWORD,
+  bucketName: process.env.COUCHBASE_BUCKET || 'app',
+  models: [users],
+});
+
+module.exports = { db };
+// module.exports = { db, eventing }; // when using Eventing plan
+```
+
+Loading the config can run your application code. Keep it free of `ensure*` / `apply*` at import time. The CLI always `shutdown()`s the client when finished.
+
+## Commands
+
+```bash
 npx couchset inspect --config ./couchset.config.cjs
 npx couchset collections plan --config ./couchset.config.cjs
 npx couchset collections apply --config ./couchset.config.cjs
@@ -18,7 +57,39 @@ npx couchset search-indexes apply --config ./couchset.config.cjs --plan ./search
 npx couchset eventing plan --config ./couchset.config.cjs
 ```
 
-`model` only prints. Admin commands load trusted code exporting registered `db`; export `eventing` for its plan (see [Eventing](/docs/eventing)). Search replacement also requires `--allow-replace`. There is no import-time DDL, automatic index drop, or automatic Eventing deployment/prune. The CLI closes its client.
+| Command | Behavior |
+| --- | --- |
+| `inspect` | Model names, scopes, collections, index / Search index names — no secrets |
+| `collections plan` | Read-only `{ scope, collection, status: 'create' \| 'matching' }[]` |
+| `collections apply` | Create-only ensure; **no** `--plan` file |
+| `indexes plan` | JSON GSI plan (`create` / `matching` / `replace`, physical `createAs`, optional `replaces`) |
+| `indexes apply --plan` | Apply exactly the reviewed JSON; CLI does **not** expose GSI old-index drop |
+| `search-indexes plan` | Search create/match/replace with catalog identity (stale plans fail) |
+| `search-indexes apply --plan` | Apply reviewed Search plan; **replacement also needs `--allow-replace`** |
+| `eventing plan` | Definition drift / stale owned names only — **not** deploy/lifecycle readiness |
 
-Plan/apply commands print JSON. Collection plans return `{scope, collection, status:'create'|'matching'}[]`; collection apply is create-only and uniquely needs no plan file. GSI plan items contain `status` (`create`, `matching`, `replace`), logical definition, keyspace/target, physical `createAs`, optional `replaces`, and reason. Search plan items likewise describe create/match/replace and retain catalog identity so stale plans fail. Index apply consumes exactly the reviewed JSON; GSI old-index removal is not exposed by the CLI, and Search replacement stays gated by `--allow-replace`.
+Plan/apply commands print JSON. Index/Search apply requires `--plan ./plan.json` (reviewed file). There is **no** CLI Eventing `apply` / prune — deploy through the [Eventing](/docs/eventing) application API after review.
 
+## Recommended workflow
+
+1. `inspect` — confirm the config sees the models you expect.  
+2. `collections plan` then `collections apply` if anything is `create`.  
+3. `indexes plan` → save JSON → review → `indexes apply --plan …`.  
+4. Same for Search when you use Search indexes.  
+5. `eventing plan` for definition drift; deploy with `eventing.apply()` in app code.
+
+Programmatic equivalents live under [Provisioning and transactions](/docs/provisioning-and-transactions) and [Search, vector, and geospatial](/docs/search-and-geo).
+
+## Pitfalls
+
+- Pointing `--config` at code that provisions on load.
+- Applying an unreviewed or stale Search plan (catalog UUID mismatch).
+- Expecting Search replace without `--allow-replace`.
+- Expecting the CLI to drop old GSI indexes or deploy Eventing.
+
+## See also
+
+- [Provisioning and transactions](/docs/provisioning-and-transactions) — ensure/plan/apply in code
+- [Search, vector, and geospatial](/docs/search-and-geo) — Search plans
+- [Eventing](/docs/eventing) — `plan` / `apply` / pause / remove
+- [API reference](/docs/api-reference) — client helpers the CLI wraps

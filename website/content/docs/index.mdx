@@ -3,11 +3,20 @@ title: CouchSet documentation
 description: A typed Couchbase model layer with explicit operational primitives.
 ---
 
-CouchSet is a Couchbase model layer for TypeScript and Node.js. It keeps key-value and SQL++ capabilities visible while adding model metadata, typed reads, validation, relationships, transactions, Search, Eventing, and operational planning.
+CouchSet is a Couchbase model layer for **TypeScript** and **Node.js**. It keeps key-value and SQL++ capabilities visible while adding model metadata, typed reads, validation, relationships, transactions, Search, Eventing, and operational planning.
 
 <Callout type="info" title="Choose the entrypoint deliberately">
 The package root, `couchset`, is the compatibility-oriented legacy API. New applications should normally import from `couchset/next`, which contains the modern singleton API and client-owned primitives described here.
 </Callout>
+
+## What CouchSet is (and is not)
+
+| CouchSet does | CouchSet does not |
+| --- | --- |
+| Typed models, safe filters, codecs, hooks | Hide Couchbase behind a magic ORM |
+| Explicit collection / index / Search / Eventing plans | Create resources merely because you imported a model |
+| Client-owned registries and transactions | Claim authorization from soft-delete or `defaultWhere` filters |
+| Search, geo, time-series, Eventing helpers | Auto-drop indexes or Eventing functions |
 
 ## Start here
 
@@ -32,4 +41,11 @@ The package root, `couchset`, is the compatibility-oriented legacy API. New appl
 | CLI plan/apply commands | [Operations and CLI](/docs/operations-cli-eventing) |
 | Exports and concise signatures | [API reference](/docs/api-reference) |
 
-CouchSet does not create collections or indexes merely because a model was imported or bound. Provisioning, replacement, cleanup, and Eventing deployment are explicit.
+## Suggested path
+
+1. [Getting started](/docs/getting-started) → first insert/get  
+2. [Models](/docs/models) + [CRUD](/docs/crud-and-queries) → day-to-day data access  
+3. [Provisioning](/docs/provisioning-and-transactions) → make keyspaces and indexes real  
+4. Pick capabilities as needed: relationships, Search, Eventing, time series  
+
+CouchSet does not create collections or indexes merely because a model was imported or bound. Provisioning, replacement, cleanup, and Eventing deployment are **explicit**.
